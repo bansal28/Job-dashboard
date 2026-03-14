@@ -89,6 +89,7 @@ def scrape_greenhouse(board_tokens: list, filter_relevant: bool = True) -> list:
                     "source": "Greenhouse",
                     "url": item.get("absolute_url", f"https://boards.greenhouse.io/{token}/jobs/{job_id}"),
                     "description_snippet": content[:500],
+                    "full_description": content,
                     "date_posted": _parse_date(item.get("updated_at", "")),
                     "query_matched": ", ".join(departments) or "Unknown",
                 })

@@ -220,7 +220,7 @@ def score_job(job: dict) -> int:
     """
     profile = get_profile()
     title = (job.get("title", "") or "").lower()
-    description = (job.get("description_snippet", "") or "").lower()
+    description = (job.get("full_description", "") or job.get("description_snippet", "") or "").lower()
     location = (job.get("location", "") or "").lower()
     job_type = (job.get("job_type", "") or "").lower()
     category = (job.get("category", "") or "")
@@ -388,7 +388,7 @@ def get_score_breakdown(job: dict) -> dict:
     """Get detailed score breakdown for a single job."""
     profile = get_profile()
     title = (job.get("title", "") or "").lower()
-    description = (job.get("description_snippet", "") or "").lower()
+    description = (job.get("full_description", "") or job.get("description_snippet", "") or "").lower()
     location = (job.get("location", "") or "").lower()
     job_type = (job.get("job_type", "") or "").lower()
     category = (job.get("category", "") or "")

@@ -118,9 +118,9 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
 
                 {/* Description */}
                 <div style={{ flex: 1 }}>
-                  {job.description_snippet && (
-                    <p style={{ color: T.dim, fontSize: 11.5, lineHeight: 1.6, margin: 0 }}>
-                      {job.description_snippet}
+                  {(job.full_description || job.description_snippet) && (
+                    <p style={{ color: T.dim, fontSize: 11.5, lineHeight: 1.6, margin: 0, maxHeight: 200, overflow: "auto" }}>
+                      {job.full_description || job.description_snippet}
                     </p>
                   )}
                 </div>
@@ -263,7 +263,7 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                 )}
 
                 {/* Smart Apply button */}
-                {(job.description_snippet || job.url) && (
+                {(job.full_description || job.description_snippet || job.url) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowApply(!showApply); }}
                     style={{

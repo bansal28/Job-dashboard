@@ -64,6 +64,8 @@ def scrape_reed(api_key: str, queries: list, locations: list, max_per_query: int
                     else:
                         salary = "Not specified"
 
+                    full_desc = item.get("jobDescription", "")
+
                     jobs.append({
                         "id": f"reed_{job_id}",
                         "title": item.get("jobTitle", "").strip(),
@@ -73,7 +75,8 @@ def scrape_reed(api_key: str, queries: list, locations: list, max_per_query: int
                         "salary": salary,
                         "source": "Reed",
                         "url": item.get("jobUrl", ""),
-                        "description_snippet": item.get("jobDescription", "")[:300],
+                        "description_snippet": full_desc[:500],
+                        "full_description": full_desc,
                         "date_posted": _parse_reed_date(item.get("date", "")),
                         "query_matched": query,
                     })
