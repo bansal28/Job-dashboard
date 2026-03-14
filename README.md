@@ -1,125 +1,212 @@
-# 🔷 Job Hunter — Automated Job Application Pipeline
+# Job Hunter 🎯
 
-A 3-step system for automating your job search: **Scrape → Apply → Track**
+An AI-powered job application automation system. Scrape jobs from multiple boards, filter with smart matching, generate tailored resumes & cover letters, and track application updates from your email — all from one dashboard.
+
+Built with React, FastAPI, SQLite, and Groq (Llama 3.3 70B).
+
+## Features
+
+### 1. Multi-Source Job Scraping
+- **Greenhouse** — Scrapes public job boards (Anthropic, DeepMind, Scale AI, Stripe, etc.)
+- **Reed.co.uk** — UK job search API with location filtering
+- **Adzuna** — Additional UK job coverage
+- Auto-deduplication across sources
+- Auto-categorization into AI/ML, Backend, Frontend, Mobile, DevOps, Data Science, etc.
+
+### 2. Smart Dashboard with Excel-Style Filters
+- Column filters with search, checkboxes, Select All — like Excel's auto-filter
+- UK Only toggle — one click to filter to UK + remote jobs
+- Sort by any column including match score
+- Global text search across all fields
+- Pagination (30 per page)
+
+### 3. AI Match Scoring (0-100%)
+Every job is scored against your resume — no API calls, runs instantly:
+- **Skills match (40%)** — Compares your skills vs JD requirements
+- **Experience level (25%)** — Graduate role + 2yr experience = high score
+- **Domain alignment (20%)** — ML job + ML background = match
+- **Location fit (15%)** — UK/Remote preference
+
+Click any score to see a detailed breakdown with matching and missing skills.
+
+### 4. Smart Apply (AI-Powered)
+Click "Smart Apply" on any job to:
+1. **Fetch the full job description** from the listing URL
+2. **Extract ATS keywords** — must-have skills, tools, action verbs
+3. **Generate tailored resume LaTeX** — rewords your bullets to match the JD
+4. **Generate tailored cover letter LaTeX** — specific to company/role
+
+Uses Groq API (free tier) with Llama 3.3 70B. Each application takes ~10 seconds.
+
+### 5. Application Pipeline (Kanban)
+Track jobs through stages: **Saved → Applied → Interview → Offer**
+- Drag between columns
+- Add notes per job
+- Collapsed rejected section with restore
+
+### 6. CSV Upload & Browse
+Upload any job CSV (from LinkedIn, recruiters, university boards) and browse it with the same filters, match scoring, and Smart Apply. Persists across sessions via localStorage.
+
+### 7. Gmail Email Tracker
+Connects to your Gmail via IMAP, scans for application emails, and classifies them with AI:
+- ✅ Acknowledgement
+- 📝 Assignment / coding challenge
+- 📅 Interview invitation
+- ❌ Rejection
+- 🎉 Offer
+
+### 8. Deadline Tracking
+Set application deadlines on any job. Color-coded warnings: red for "due today", yellow for "3 days left".
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  STEP 1: SCRAPE                                      │
-│  ┌───────────┐ ┌──────────┐ ┌─────────────┐         │
-│  │ Reed API  │ │ Adzuna   │ │ Greenhouse  │         │
-│  │ (UK jobs) │ │ (global) │ │ (direct ATS)│         │
-│  └─────┬─────┘ └────┬─────┘ └──────┬──────┘         │
-│        └─────────────┼──────────────┘                │
-│                      ▼                               │
-│              ┌──────────────┐                        │
-│              │   jobs.csv   │                        │
-│              └──────┬───────┘                        │
-│                     ▼                                │
-│          ┌───────────────────┐                       │
-│          │  Dashboard UI     │ ← filters, sort,     │
-│          │  (React/Browser)  │   search, status      │
-│          └────────┬──────────┘                       │
-└───────────────────┼──────────────────────────────────┘
-                    ▼
-┌──────────────────────────────────────────────────────┐
-│  STEP 2: SMART APPLY (coming next)                   │
-│  Click APPLY → extract keywords from JD →            │
-│  generate tailored CV + cover letter (via Claude)    │
-└──────────────────────────────────────────────────────┘
-                    ▼
-┌──────────────────────────────────────────────────────┐
-│  STEP 3: EMAIL TRACKER                               │
-│  Gmail IMAP → classify emails →                      │
-│  track: ack / assignment / interview / rejection     │
-└──────────────────────────────────────────────────────┘
+jobbot-claude/
+├── server/                 # FastAPI backend
+│   ├── app.py              # API endpoints
+│   ├── database.py         # SQLite with dedup
+│   ├── categorizer.py      # Auto-categorization & UK detection
+│   ├── match_engine.py     # Resume-based match scoring
+│   ├── apply_engine.py     # Smart Apply (Groq + JD fetching)
+│   ├── gmail_tracker.py    # IMAP + AI classification
+│   └── import_csv.py       # CSV → DB migration
+├── scrapers/               # Job board scrapers
+│   ├── greenhouse_scraper.py
+│   ├── reed_scraper.py
+│   ├── adzuna_scraper.py
+│   ├── config.example.py   # Template (copy to config.py)
+│   └── main.py             # CLI orchestrator
+├── dashboard/              # React frontend (Vite)
+│   └── src/
+│       ├── App.jsx         # Root: sidebar + routing
+│       ├── api.js          # Safe fetch wrappers
+│       ├── theme.jsx       # Colors, icons, utilities
+│       ├── components/     # Reusable UI
+│       │   ├── JobTable.jsx
+│       │   ├── JobRow.jsx
+│       │   ├── ColumnFilter.jsx
+│       │   ├── ApplyPanel.jsx
+│       │   ├── ScrapePanel.jsx
+│       │   └── FormField.jsx
+│       └── views/          # Screens
+│           ├── DiscoverView.jsx
+│           ├── PipelineView.jsx
+│           ├── AddJobView.jsx
+│           ├── CsvUploadView.jsx
+│           └── EmailTrackerView.jsx
+├── templates/              # Your LaTeX templates (gitignored)
+│   ├── resume_base.tex
+│   └── cover_letter_base.tex
+└── data/                   # SQLite database (gitignored)
+    └── jobs.db
 ```
 
-## Quick Start
+## Setup
 
-### 1. Install dependencies
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+- A [Groq API key](https://console.groq.com/keys) (free)
+- A [Reed API key](https://www.reed.co.uk/developers) (free, optional)
+
+### Installation
 
 ```bash
-cd job-hunter
+# Clone
+git clone https://github.com/bansal28/Job-dashboard.git
+cd Job-dashboard
+
+# Python environment
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+
+# Node dependencies
+cd dashboard
+npm install
+cd ..
+
+# Configuration
+cp scrapers/config.example.py scrapers/config.py
+# Edit scrapers/config.py and add your API keys
 ```
 
-### 2. Get API keys
+### Add Your Resume Templates
 
-| Source | How to get | Free tier |
-|--------|-----------|-----------|
-| **Greenhouse** | No key needed! | Unlimited (public API) |
-| **Reed.co.uk** | https://www.reed.co.uk/developers | 5,000 req/day |
-| **Adzuna** | https://developer.adzuna.com/ | 250 req/day |
+Create a `templates/` folder and add your LaTeX resume and cover letter:
 
-### 3. Configure
+```bash
+mkdir templates
+# Add your resume_base.tex and cover_letter_base.tex
+```
+
+The cover letter template should use `<<PLACEHOLDER>>` syntax for fields the AI will fill in.
+
+### Configuration
 
 Edit `scrapers/config.py`:
-- Add your API keys for Reed and Adzuna
-- Customize `SEARCH_QUERIES` and `LOCATIONS`
-- Add/remove companies in `GREENHOUSE_BOARDS`
 
-### 4. Run scrapers
+```python
+# Required for Smart Apply
+GROQ_API_KEY = "gsk_..."          # Free from console.groq.com/keys
+
+# Optional — job scraping
+REED_API_KEY = "..."              # Free from reed.co.uk/developers
+ADZUNA_APP_ID = ""                # From developer.adzuna.com
+ADZUNA_APP_KEY = ""
+
+# Optional — email tracking
+GMAIL_ADDRESS = ""                # Your job application email
+GMAIL_APP_PASSWORD = ""           # From myaccount.google.com/apppasswords
+```
+
+### Run
 
 ```bash
-cd scrapers
+# Terminal 1 — Backend
+source .venv/bin/activate
+uvicorn server.app:app --port 8000
 
-# Run everything (Greenhouse works without API keys!)
-python main.py
-
-# Or run specific sources
-python main.py --greenhouse   # No API key needed
-python main.py --reed
-python main.py --adzuna
-
-# Append to existing CSV (preserves old data)
-python main.py --append
+# Terminal 2 — Frontend
+cd dashboard
+npm run dev
 ```
 
-Output: `output/jobs.csv`
-
-### 5. View in Dashboard
-
-Open the React dashboard (`job-hunter-dashboard.jsx`) in Claude.ai or copy to your local React project. Click **Import CSV** to load your scraped `jobs.csv`.
-
-### 6. Track emails (Step 3)
-
+Or use the combined script:
 ```bash
-# Set Gmail credentials in config.py first
-python email_tracker.py
+./run.sh
 ```
 
-## Adding Greenhouse Companies
+Open [http://localhost:5173](http://localhost:5173)
 
-Find a company's Greenhouse board token from their careers page URL:
-- `https://boards.greenhouse.io/anthropic` → token = `anthropic`
-- `https://boards.greenhouse.io/deepmind` → token = `deepmind`
+## API Endpoints
 
-Add to `GREENHOUSE_BOARDS` in `config.py`.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/jobs` | List all jobs (with match scores) |
+| POST | `/api/scrape` | Start scraping |
+| GET | `/api/scrape/status` | Scrape progress |
+| PATCH | `/api/jobs/{id}` | Update status/notes/deadline |
+| POST | `/api/jobs` | Add manual job |
+| DELETE | `/api/jobs/{id}` | Delete manual job |
+| GET | `/api/match/{id}` | Match score breakdown |
+| POST | `/api/match/batch` | Score arbitrary jobs |
+| POST | `/api/apply/{id}` | Generate application (DB job) |
+| POST | `/api/apply-direct` | Generate application (any job) |
+| GET | `/api/apply/{id}` | Get generation result |
+| POST | `/api/emails/scan` | Scan Gmail |
+| GET | `/api/emails/status` | Email scan results |
+| GET | `/api/filters` | Unique filter values |
+| GET | `/api/stats` | Job count stats |
 
-## File Structure
+## Tech Stack
 
-```
-job-hunter/
-├── scrapers/
-│   ├── config.py              # API keys & search preferences
-│   ├── main.py                # Orchestrator — runs all scrapers
-│   ├── reed_scraper.py        # Reed.co.uk API
-│   ├── adzuna_scraper.py      # Adzuna API
-│   ├── greenhouse_scraper.py  # Greenhouse boards (free!)
-│   └── email_tracker.py       # Gmail IMAP scanner
-├── output/
-│   ├── jobs.csv               # Scraped jobs (auto-generated)
-│   └── email_tracker.csv      # Email classifications
-├── templates/                 # (Step 2) CV/cover letter templates
-├── requirements.txt
-└── README.md
-```
+- **Frontend**: React 19, Vite 7, inline styles (no CSS framework)
+- **Backend**: FastAPI, SQLite, Python 3
+- **AI**: Groq API (Llama 3.3 70B) — free tier
+- **Scraping**: Greenhouse API, Reed API, Adzuna API
+- **Email**: Gmail IMAP + AI classification
 
-## What's Next
+## License
 
-- **Step 2**: Smart Apply — Claude API extracts JD keywords, generates tailored CV + cover letter
-- **Step 3 upgrade**: Replace keyword classification with Claude API for better email parsing
-- **Scheduling**: Cron job to auto-scrape daily
-- **More sources**: Indeed (RSS), LinkedIn (manual), company career pages
+MIT
