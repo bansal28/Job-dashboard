@@ -19,6 +19,7 @@ from database import (init_db, insert_jobs, get_jobs, update_job, add_manual_job
     get_last_scrape, recategorize_all)
 from categorizer import enrich_job
 from apply_engine import generate_application
+from match_engine import score_all_jobs, get_score_breakdown, reload_profile
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,6 +38,7 @@ class ScrapeRequest(BaseModel):
 class JobUpdate(BaseModel):
     status: str | None = None
     notes: str | None = None
+    deadline: str | None = None
 
 class ManualJob(BaseModel):
     title: str
@@ -98,7 +100,10 @@ def scrape_status():
 # ── Jobs ──
 @app.get("/api/jobs")
 def list_jobs(status: str = None, source: str = None, is_uk: str = None, category: str = None, city: str = None):
-    return get_jobs(status=status, source=source, is_uk=is_uk, category=category, city=city)
+    jobs = get_jobs(status=status, source=source, is_uk=is_uk, category=category, city=city)
+    # Add match scores to all jobs
+    score_all_jobs(jobs)
+    return jobs
 
 @app.patch("/api/jobs/{job_id}")
 def patch_job(job_id: str, updates: JobUpdate):
@@ -117,6 +122,36 @@ def create_job(job: ManualJob):
 @app.delete("/api/jobs/{job_id}")
 def remove_job(job_id: str):
     if not delete_job(job_id): raise HTTPException(404, "Not found")
+    return {"ok": True}
+
+# ── Match Score ──
+@app.get("/api/match/{job_id}")
+def match_breakdown(job_id: str):
+    """Get detailed match score breakdown for a job."""
+    jobs = get_jobs()
+    job = next((j for j in jobs if j["id"] == job_id), None)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return get_score_breakdown(job)
+
+@app.post("/api/match/reload")
+def reload_match_profile():
+    """Reload the candidate profile (after resume update)."""
+    profile = reload_profile()
+    return {
+        "skills_count": len(profile["skills"]),
+        "experience_years": profile["years_experience"],
+        "education": profile["education_level"],
+        "domains": sorted(profile["domains"]),
+    }
+
+# ── Deadline tracking ──
+@app.patch("/api/jobs/{job_id}/deadline")
+def set_deadline(job_id: str, body: dict):
+    """Set application deadline for a job."""
+    deadline = body.get("deadline", "")
+    if not update_job(job_id, {"deadline": deadline}):
+        raise HTTPException(404, "Not found")
     return {"ok": True}
 
 # ── Filters ──
@@ -147,13 +182,20 @@ def recategorize():
 def health():
     return {"status": "ok"}
 
+# ── Batch Match Scoring (for CSV jobs) ──
+@app.post("/api/match/batch")
+def batch_score(body: list[dict]):
+    """Score a list of arbitrary jobs (not in DB). Used by CSV upload."""
+    score_all_jobs(body)
+    # Return just id->score mapping to keep response small
+    return [{"id": j.get("id", ""), "match_score": j.get("match_score", 0)} for j in body]
+
 # ── Smart Apply ──
-apply_state = {}  # job_id -> {status, result}
+apply_state = {}  # key -> {status, result}
 
 @app.post("/api/apply/{job_id}")
 def start_apply(job_id: str):
-    """Generate tailored resume + cover letter for a job."""
-    # Check if already generating
+    """Generate tailored resume + cover letter for a job in the DB."""
     if job_id in apply_state and apply_state[job_id].get("status") == "generating":
         return {"message": "Already generating", "status": "generating"}
 
@@ -163,7 +205,18 @@ def start_apply(job_id: str):
     if not job:
         raise HTTPException(404, "Job not found")
 
-    # Get API key
+    return _run_apply(job_id, job)
+
+@app.post("/api/apply-direct")
+def start_apply_direct(job: dict):
+    """Generate tailored resume + cover letter for an arbitrary job (CSV upload etc)."""
+    key = job.get("id", f"direct_{hash(job.get('title',''))}")
+    if key in apply_state and apply_state[key].get("status") == "generating":
+        return {"message": "Already generating", "status": "generating", "key": key}
+    return _run_apply(key, job)
+
+def _run_apply(key: str, job: dict):
+    """Shared apply logic for both DB and direct jobs."""
     try:
         from config import GROQ_API_KEY
         api_key = GROQ_API_KEY
@@ -173,18 +226,17 @@ def start_apply(job_id: str):
     if not api_key:
         raise HTTPException(400, "No GROQ_API_KEY configured. Add it to scrapers/config.py")
 
-    # Run in background
-    apply_state[job_id] = {"status": "generating", "result": None}
+    apply_state[key] = {"status": "generating", "result": None}
 
     def run():
         try:
             result = generate_application(job, api_key)
-            apply_state[job_id] = {"status": "done", "result": result}
+            apply_state[key] = {"status": "done", "result": result}
         except Exception as e:
-            apply_state[job_id] = {"status": "error", "result": {"error": str(e)}}
+            apply_state[key] = {"status": "error", "result": {"error": str(e)}}
 
     threading.Thread(target=run, daemon=True).start()
-    return {"message": "Generating...", "status": "generating"}
+    return {"message": "Generating...", "status": "generating", "key": key}
 
 @app.get("/api/apply/{job_id}")
 def get_apply_result(job_id: str):

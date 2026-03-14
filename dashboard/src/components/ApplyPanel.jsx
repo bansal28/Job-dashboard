@@ -4,19 +4,23 @@ import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme.jsx
 
 /**
  * ApplyPanel — shown inside an expanded job row when "Apply" is clicked.
- * Calls the backend to generate a tailored resume + cover letter,
- * then displays extracted keywords and LaTeX code with copy/download buttons.
+ * Supports two modes:
+ *   - DB mode: jobId is set, calls /api/apply/{jobId}
+ *   - Direct mode: jobData is set (CSV jobs), calls /api/apply-direct
  */
-export default function ApplyPanel({ jobId, jobTitle, company }) {
+export default function ApplyPanel({ jobId, jobTitle, company, jobData = null }) {
   const [status, setStatus] = useState("idle"); // idle | generating | done | error
   const [result, setResult] = useState(null);
   const [activeTab, setActiveTab] = useState("jd"); // jd | keywords | resume | cover
+  const [applyKey, setApplyKey] = useState(jobId); // track the key for polling
   const pollRef = useRef(null);
+
+  const isDirect = !!jobData;
 
   // Check if we already have a result
   useEffect(() => {
     const checkExisting = async () => {
-      const data = await api.get(`/api/apply/${jobId}`);
+      const data = await api.get(`/api/apply/${applyKey}`);
       if (data && data.status === "done" && data.result) {
         setResult(data.result);
         setStatus("done");
@@ -27,12 +31,12 @@ export default function ApplyPanel({ jobId, jobTitle, company }) {
     };
     checkExisting();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [jobId]);
+  }, [applyKey]);
 
   const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
-      const data = await api.get(`/api/apply/${jobId}`);
+      const data = await api.get(`/api/apply/${applyKey}`);
       if (!data) return;
       if (data.status === "done") {
         clearInterval(pollRef.current);
@@ -46,12 +50,20 @@ export default function ApplyPanel({ jobId, jobTitle, company }) {
         setStatus("error");
       }
     }, 2000);
-  }, [jobId]);
+  }, [applyKey]);
 
   const handleGenerate = async () => {
     setStatus("generating");
-    const res = await api.post(`/api/apply/${jobId}`, {});
+    let res;
+    if (isDirect) {
+      // Send full job data for CSV jobs
+      res = await api.post("/api/apply-direct", jobData);
+    } else {
+      res = await api.post(`/api/apply/${jobId}`, {});
+    }
     if (res) {
+      // Update the polling key if returned
+      if (res.key) setApplyKey(res.key);
       startPolling();
     } else {
       setStatus("error");

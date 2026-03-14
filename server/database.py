@@ -84,6 +84,7 @@ def _migrate(db):
         "category": "TEXT DEFAULT ''",
         "city": "TEXT DEFAULT ''",
         "is_uk": "TEXT DEFAULT '0'",
+        "deadline": "TEXT DEFAULT ''",
     }
     for col, typedef in migrations.items():
         if col not in existing:
@@ -148,7 +149,7 @@ def get_jobs(status=None, source=None, is_uk=None, category=None, city=None):
 
 
 def update_job(job_id: str, updates: dict) -> bool:
-    allowed = {"status", "notes", "category", "city", "is_uk", "job_type"}
+    allowed = {"status", "notes", "category", "city", "is_uk", "job_type", "deadline"}
     fields = {k: v for k, v in updates.items() if k in allowed}
     if not fields:
         return False

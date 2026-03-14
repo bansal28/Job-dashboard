@@ -1,31 +1,62 @@
 import React, { useState } from "react";
 import { T, STATUS_MAP, ALL_STATUSES, CATEGORY_COLORS, Icon, ICONS, fontMono, buttonStyle, daysAgo } from "../theme.jsx";
 import ApplyPanel from "./ApplyPanel";
+import api from "../api";
 
 /**
  * Expandable job table row.
- * Shows job summary; on click expands to show description, notes, status controls.
- *
- * Props:
- *   job          — Job object from API
- *   isExpanded   — Boolean
- *   onToggle     — Callback to expand/collapse
- *   updateStatus — (id, status) => void
- *   updateNotes  — (id, notes) => void  (optional)
- *   deleteJob    — (id) => void  (optional, only for manual jobs)
- *   columns      — Array of column keys to render (allows reuse across views)
+ * Shows: match score, job summary, deadline.
+ * Expands to: description, notes, status controls, deadline picker,
+ *             match breakdown, Smart Apply panel.
  */
 
-const DEFAULT_COLUMNS = ["title", "company", "category", "city", "job_type", "salary", "source", "date_posted", "status"];
+const DEFAULT_COLUMNS = [
+  "match_score", "title", "company", "category", "city",
+  "job_type", "salary", "source", "date_posted", "status",
+];
 
 export default function JobRow({ job, isExpanded, onToggle, updateStatus, updateNotes, deleteJob, columns = DEFAULT_COLUMNS }) {
   const statusStyle = STATUS_MAP[job.status] || STATUS_MAP.New;
   const isManual = job.source === "Manual";
   const categoryColor = CATEGORY_COLORS[job.category] || T.dim;
   const [showApply, setShowApply] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const [breakdown, setBreakdown] = useState(null);
+  const [deadline, setDeadline] = useState(job.deadline || "");
+
+  const score = job.match_score || 0;
+  const scoreColor = score >= 75 ? T.green : score >= 50 ? T.yellow : score >= 30 ? T.dim : T.red;
+
+  const handleDeadlineChange = (val) => {
+    setDeadline(val);
+    api.patch(`/api/jobs/${job.id}`, { deadline: val });
+  };
+
+  const loadBreakdown = async () => {
+    if (breakdown) { setShowBreakdown(!showBreakdown); return; }
+    const data = await api.get(`/api/match/${job.id}`);
+    if (data) { setBreakdown(data); setShowBreakdown(true); }
+  };
+
+  // Deadline status
+  const deadlineInfo = getDeadlineInfo(deadline);
 
   const cellRenderers = {
-    title:       () => <td key="title" style={{ padding: "10px 10px", color: T.bright, fontWeight: 500, fontSize: 12 }}>{job.title}</td>,
+    match_score: () => (
+      <td key="match_score" style={{ padding: "10px 8px", textAlign: "center", width: 50 }}>
+        <ScoreBadge score={score} color={scoreColor} />
+      </td>
+    ),
+    title: () => (
+      <td key="title" style={{ padding: "10px 10px" }}>
+        <div style={{ color: T.bright, fontWeight: 500, fontSize: 12 }}>{job.title}</div>
+        {deadline && (
+          <span style={{ fontSize: 9, color: deadlineInfo.color, marginTop: 2, display: "inline-block" }}>
+            ⏰ {deadlineInfo.label}
+          </span>
+        )}
+      </td>
+    ),
     company:     () => <td key="company" style={{ padding: "10px 10px", color: T.cyan, fontSize: 11.5 }}>{job.company}</td>,
     category:    () => <td key="category" style={{ padding: "10px 10px", color: categoryColor, fontSize: 10.5 }}>{job.category || "\u2014"}</td>,
     city:        () => <td key="city" style={{ padding: "10px 10px", color: T.dim, fontSize: 11 }}>{job.city || job.location}</td>,
@@ -34,7 +65,7 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
     salary:      () => <td key="salary" style={{ padding: "10px 10px", color: T.dim, fontSize: 11 }}>{job.salary}</td>,
     source:      () => <td key="source" style={{ padding: "10px 10px", color: T.dim, fontSize: 10.5 }}>{job.source}</td>,
     date_posted: () => <td key="date_posted" style={{ padding: "10px 10px", color: T.dim, fontSize: 11 }}>{daysAgo(job.date_posted)}</td>,
-    status:      () => (
+    status: () => (
       <td key="status" style={{ padding: "10px 10px" }}>
         <span style={{ background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}`, padding: "2px 8px", borderRadius: 4, fontSize: 10 }}>
           {job.status}
@@ -56,7 +87,9 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
         onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.background = T.surface; }}
         onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = "transparent"; }}
       >
-        {columns.map((col) => cellRenderers[col] ? cellRenderers[col]() : <td key={col} style={{ padding: "10px 10px", color: T.dim, fontSize: 11 }}>{job[col] || ""}</td>)}
+        {columns.map((col) => cellRenderers[col] ? cellRenderers[col]() : (
+          <td key={col} style={{ padding: "10px 10px", color: T.dim, fontSize: 11 }}>{job[col] || ""}</td>
+        ))}
       </tr>
 
       {/* Expanded detail row */}
@@ -64,28 +97,123 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
         <tr style={{ background: T.surface }} className="fade-in">
           <td colSpan={columns.length} style={{ padding: "0 10px 12px" }}>
             <div style={{ background: T.card, borderRadius: 8, padding: 14, border: `1px solid ${T.border}`, marginTop: 2 }}>
-              {/* Description */}
-              {job.description_snippet && (
-                <p style={{ color: T.dim, fontSize: 11.5, lineHeight: 1.6, marginBottom: 12 }}>
-                  {job.description_snippet}
-                </p>
+
+              {/* Match score + description row */}
+              <div style={{ display: "flex", gap: 14, marginBottom: 12 }}>
+                {/* Score breakdown mini-card */}
+                {score > 0 && (
+                  <div
+                    onClick={(e) => { e.stopPropagation(); loadBreakdown(); }}
+                    style={{
+                      minWidth: 80, textAlign: "center", padding: "10px 12px",
+                      background: T.bg, borderRadius: 8, border: `1px solid ${T.border}`,
+                      cursor: "pointer", flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ fontSize: 24, fontWeight: 700, color: scoreColor }}>{score}%</div>
+                    <div style={{ fontSize: 9, color: T.dim, textTransform: "uppercase", marginTop: 2 }}>Match</div>
+                    <div style={{ fontSize: 8, color: T.cyanDim, marginTop: 3 }}>Click for details</div>
+                  </div>
+                )}
+
+                {/* Description */}
+                <div style={{ flex: 1 }}>
+                  {job.description_snippet && (
+                    <p style={{ color: T.dim, fontSize: 11.5, lineHeight: 1.6, margin: 0 }}>
+                      {job.description_snippet}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Score breakdown panel */}
+              {showBreakdown && breakdown && (
+                <div className="fade-in" style={{
+                  background: T.bg, borderRadius: 8, border: `1px solid ${T.border}`,
+                  padding: 14, marginBottom: 12,
+                }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ fontSize: 12, color: T.bright, fontWeight: 500, marginBottom: 10 }}>
+                    Match Breakdown
+                  </div>
+
+                  {/* Score bars */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                    <ScoreBar label="Skills" score={breakdown.skills_score} weight="40%" />
+                    <ScoreBar label="Experience Level" score={breakdown.level_score} weight="25%" />
+                    <ScoreBar label="Domain" score={breakdown.domain_score} weight="20%" />
+                    <ScoreBar label="Location" score={breakdown.location_score} weight="15%" />
+                  </div>
+
+                  {/* Matching / missing skills */}
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                    {breakdown.matching_skills?.length > 0 && (
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontSize: 10, color: T.green, textTransform: "uppercase", marginBottom: 4 }}>
+                          ✓ Matching Skills ({breakdown.matching_skills.length})
+                        </div>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          {breakdown.matching_skills.map((s, i) => (
+                            <span key={i} style={{ background: T.greenBg, border: `1px solid ${T.green}30`, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: T.green }}>
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {breakdown.missing_skills?.length > 0 && (
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontSize: 10, color: T.red, textTransform: "uppercase", marginBottom: 4 }}>
+                          ✗ Missing Skills ({breakdown.missing_skills.length})
+                        </div>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          {breakdown.missing_skills.map((s, i) => (
+                            <span key={i} style={{ background: T.redBg, border: `1px solid ${T.red}30`, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: T.red }}>
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
 
-              {/* Notes */}
-              {updateNotes && (
-                <textarea
-                  value={job.notes || ""}
-                  onChange={(e) => updateNotes(job.id, e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  placeholder="Add notes about this job..."
-                  style={{
-                    width: "100%", background: T.bg, border: `1px solid ${T.border}`,
-                    borderRadius: 6, padding: "7px 10px", color: T.text,
-                    fontSize: 11, fontFamily: fontMono, resize: "vertical", minHeight: 32,
-                    marginBottom: 10,
-                  }}
-                />
-              )}
+              {/* Notes + deadline row */}
+              <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                {/* Notes */}
+                {updateNotes && (
+                  <textarea
+                    value={job.notes || ""}
+                    onChange={(e) => updateNotes(job.id, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="Add notes about this job..."
+                    style={{
+                      flex: 1, background: T.bg, border: `1px solid ${T.border}`,
+                      borderRadius: 6, padding: "7px 10px", color: T.text,
+                      fontSize: 11, fontFamily: fontMono, resize: "vertical", minHeight: 32,
+                    }}
+                  />
+                )}
+
+                {/* Deadline picker */}
+                {updateStatus && (
+                  <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+                    <label style={{ fontSize: 9, color: T.dim, textTransform: "uppercase", display: "block", marginBottom: 3 }}>
+                      Deadline
+                    </label>
+                    <input
+                      type="date"
+                      value={deadline}
+                      onChange={(e) => handleDeadlineChange(e.target.value)}
+                      style={{
+                        background: T.bg, border: `1px solid ${deadline ? deadlineInfo.borderColor : T.border}`,
+                        borderRadius: 6, padding: "6px 8px", color: T.text,
+                        fontSize: 11, fontFamily: fontMono, width: 130,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
 
               {/* Actions */}
               <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -135,7 +263,7 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                 )}
 
                 {/* Smart Apply button */}
-                {updateStatus && job.description_snippet && (
+                {(job.description_snippet || job.url) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowApply(!showApply); }}
                     style={{
@@ -153,7 +281,7 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
 
               {/* Apply Panel */}
               {showApply && (
-                <ApplyPanel jobId={job.id} jobTitle={job.title} company={job.company} />
+                <ApplyPanel jobId={job.id} jobTitle={job.title} company={job.company} jobData={!updateStatus ? job : null} />
               )}
             </div>
           </td>
@@ -161,4 +289,74 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
       )}
     </React.Fragment>
   );
+}
+
+
+/* ─── Score Badge (shown in table cell) ─── */
+function ScoreBadge({ score, color }) {
+  if (!score && score !== 0) return <span style={{ color: T.dim, fontSize: 10 }}>—</span>;
+
+  const radius = 16;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDash = (score / 100) * circumference;
+
+  return (
+    <div style={{ position: "relative", width: 38, height: 38, display: "inline-block" }}>
+      <svg width="38" height="38" viewBox="0 0 38 38">
+        <circle cx="19" cy="19" r={radius} fill="none" stroke={T.border} strokeWidth="3" />
+        <circle
+          cx="19" cy="19" r={radius} fill="none"
+          stroke={color} strokeWidth="3"
+          strokeDasharray={`${strokeDash} ${circumference}`}
+          strokeLinecap="round"
+          transform="rotate(-90 19 19)"
+        />
+      </svg>
+      <div style={{
+        position: "absolute", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        fontSize: 10, fontWeight: 700, color,
+      }}>
+        {score}
+      </div>
+    </div>
+  );
+}
+
+
+/* ─── Score Bar (shown in breakdown) ─── */
+function ScoreBar({ label, score, weight }) {
+  const color = score >= 75 ? T.green : score >= 50 ? T.yellow : score >= 30 ? T.dim : T.red;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 10, color: T.dim, width: 100, flexShrink: 0 }}>
+        {label} <span style={{ fontSize: 8, opacity: 0.5 }}>({weight})</span>
+      </span>
+      <div style={{ flex: 1, height: 6, background: T.border, borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ width: `${score}%`, height: "100%", background: color, borderRadius: 3, transition: "width 0.3s" }} />
+      </div>
+      <span style={{ fontSize: 10, color, fontWeight: 600, width: 30, textAlign: "right" }}>{score}</span>
+    </div>
+  );
+}
+
+
+/* ─── Deadline helpers ─── */
+function getDeadlineInfo(deadline) {
+  if (!deadline) return { label: "", color: T.dim, borderColor: T.border };
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const dl = new Date(deadline);
+  dl.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((dl - now) / 86400000);
+
+  if (diffDays < 0) return { label: "Past deadline", color: T.red, borderColor: T.red };
+  if (diffDays === 0) return { label: "Due today!", color: T.red, borderColor: T.red };
+  if (diffDays === 1) return { label: "Due tomorrow", color: T.red, borderColor: T.red };
+  if (diffDays <= 3) return { label: `${diffDays}d left`, color: T.yellow, borderColor: T.yellow };
+  if (diffDays <= 7) return { label: `${diffDays}d left`, color: T.cyan, borderColor: T.cyanDim };
+
+  const dateStr = dl.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return { label: dateStr, color: T.dim, borderColor: T.border };
 }

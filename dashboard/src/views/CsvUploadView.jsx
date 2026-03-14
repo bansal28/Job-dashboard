@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import api from "../api";
 import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle, parseCSV, exportCSV } from "../theme.jsx";
 import JobTable from "../components/JobTable";
 
@@ -97,6 +98,7 @@ function saveCsvs(csvs) {
 // ─── Smart columns based on data ────────────────────
 function detectColumns(jobs) {
   const possibleCols = [
+    { key: "match_score", label: "Match", filterable: false },
     { key: "title", label: "Title", filterable: false },
     { key: "company", label: "Company", filterable: true },
     { key: "category", label: "Category", filterable: true },
@@ -109,8 +111,9 @@ function detectColumns(jobs) {
     { key: "status", label: "Status", filterable: true },
   ];
 
+  // Always include match_score; for others check if data exists
   const available = possibleCols.filter((col) =>
-    jobs.some((j) => j[col.key] && String(j[col.key]).trim())
+    col.key === "match_score" || jobs.some((j) => j[col.key] && String(j[col.key]).trim())
   );
 
   return available.length >= 3 ? available : possibleCols;
@@ -139,6 +142,29 @@ export default function CsvUploadView() {
 
   const activeCsv = savedCsvs.find((c) => c.id === activeId);
 
+  // Score jobs via API after upload
+  const scoreJobs = useCallback(async (csvId, jobs) => {
+    try {
+      const scores = await api.post("/api/match/batch", jobs);
+      if (scores && Array.isArray(scores)) {
+        const scoreMap = {};
+        scores.forEach((s) => { scoreMap[s.id] = s.match_score; });
+        setSavedCsvs((prev) => prev.map((csv) => {
+          if (csv.id !== csvId) return csv;
+          return {
+            ...csv,
+            jobs: csv.jobs.map((j) => ({
+              ...j,
+              match_score: scoreMap[j.id] || j.match_score || 0,
+            })),
+          };
+        }));
+      }
+    } catch (e) {
+      console.warn("Failed to score CSV jobs:", e);
+    }
+  }, []);
+
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -151,8 +177,9 @@ export default function CsvUploadView() {
 
         const headers = Object.keys(raw[0]);
         const jobs = raw.map(normalizeRow);
+        const csvId = `csv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const newCsv = {
-          id: `csv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          id: csvId,
           name: file.name,
           uploadedAt: new Date().toISOString(),
           rowCount: jobs.length,
@@ -161,17 +188,35 @@ export default function CsvUploadView() {
         };
 
         setSavedCsvs((prev) => {
-          // Replace if same filename already exists
           const filtered = prev.filter((c) => c.name !== file.name);
           return [newCsv, ...filtered];
         });
-        setActiveId(newCsv.id);
+        setActiveId(csvId);
+
+        // Score jobs in background
+        scoreJobs(csvId, jobs);
       };
       reader.readAsText(file);
     });
 
-    e.target.value = ""; // allow re-upload of same file
+    e.target.value = "";
   };
+
+  // Local state handlers so JobRow shows all features for CSV jobs
+  const updateJobInCsv = useCallback((jobId, updates) => {
+    setSavedCsvs((prev) => prev.map((csv) => ({
+      ...csv,
+      jobs: csv.jobs.map((j) => j.id === jobId ? { ...j, ...updates } : j),
+    })));
+  }, []);
+
+  const updateStatus = useCallback((jobId, status) => {
+    updateJobInCsv(jobId, { status });
+  }, [updateJobInCsv]);
+
+  const updateNotes = useCallback((jobId, notes) => {
+    updateJobInCsv(jobId, { notes });
+  }, [updateJobInCsv]);
 
   const deleteCsv = (id) => {
     setSavedCsvs((prev) => prev.filter((c) => c.id !== id));
@@ -336,8 +381,8 @@ export default function CsvUploadView() {
                 jobs={activeCsv.jobs}
                 columns={detectColumns(activeCsv.jobs)}
                 showUkToggle={activeCsv.jobs.some((j) => j.is_uk === "1")}
-                updateStatus={null}
-                updateNotes={null}
+                updateStatus={updateStatus}
+                updateNotes={updateNotes}
                 deleteJob={null}
               />
             </div>

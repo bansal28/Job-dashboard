@@ -19,6 +19,7 @@ import JobRow from "./JobRow";
  */
 
 const DEFAULT_COLUMNS = [
+  { key: "match_score", label: "Match", filterable: false },
   { key: "title", label: "Position", filterable: false },
   { key: "company", label: "Company", filterable: true },
   { key: "category", label: "Category", filterable: true },
@@ -47,7 +48,7 @@ export default function JobTable({
     columns.forEach((col) => { if (col.filterable) initial[col.key] = []; });
     return initial;
   });
-  const [sortBy, setSortBy] = useState("date_posted");
+  const [sortBy, setSortBy] = useState("match_score");
   const [sortDir, setSortDir] = useState("desc");
   const [expandedId, setExpandedId] = useState(null);
   const [page, setPage] = useState(0);
@@ -89,8 +90,16 @@ export default function JobTable({
 
     // Sort
     result.sort((a, b) => {
-      const aVal = a[sortBy] || "";
-      const bVal = b[sortBy] || "";
+      let aVal = a[sortBy];
+      let bVal = b[sortBy];
+      // Numeric sort for match_score
+      if (sortBy === "match_score") {
+        aVal = Number(aVal) || 0;
+        bVal = Number(bVal) || 0;
+      } else {
+        aVal = aVal || "";
+        bVal = bVal || "";
+      }
       const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
       return sortDir === "asc" ? cmp : -cmp;
     });
