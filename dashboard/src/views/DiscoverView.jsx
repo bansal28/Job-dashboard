@@ -4,7 +4,6 @@ import JobTable from "../components/JobTable";
 
 /**
  * Discover screen — scrape panel at top, then the full filterable job table.
- * All data comes from the API via parent App component.
  */
 export default function DiscoverView({ jobs, updateStatus, updateNotes, deleteJob, reload }) {
   return (

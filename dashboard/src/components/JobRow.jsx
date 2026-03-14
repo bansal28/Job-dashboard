@@ -12,7 +12,7 @@ import api from "../api";
 
 const DEFAULT_COLUMNS = [
   "match_score", "title", "company", "category", "city",
-  "job_type", "salary", "source", "date_posted", "status",
+  "job_type", "salary", "source", "date_posted", "deadline", "status",
 ];
 
 export default function JobRow({ job, isExpanded, onToggle, updateStatus, updateNotes, deleteJob, columns = DEFAULT_COLUMNS }) {
@@ -65,6 +65,14 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
     salary:      () => <td key="salary" style={{ padding: "10px 10px", color: T.dim, fontSize: 11 }}>{job.salary}</td>,
     source:      () => <td key="source" style={{ padding: "10px 10px", color: T.dim, fontSize: 10.5 }}>{job.source}</td>,
     date_posted: () => <td key="date_posted" style={{ padding: "10px 10px", color: T.dim, fontSize: 11 }}>{daysAgo(job.date_posted)}</td>,
+    deadline: () => {
+      const dl = deadlineInfo;
+      return (
+        <td key="deadline" style={{ padding: "10px 10px", fontSize: 10.5, color: deadline ? dl.color : T.dim }}>
+          {deadline ? dl.label : "\u2014"}
+        </td>
+      );
+    },
     status: () => (
       <td key="status" style={{ padding: "10px 10px" }}>
         <span style={{ background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}`, padding: "2px 8px", borderRadius: 4, fontSize: 10 }}>

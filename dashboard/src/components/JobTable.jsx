@@ -28,6 +28,7 @@ const DEFAULT_COLUMNS = [
   { key: "salary", label: "Salary", filterable: false },
   { key: "source", label: "Source", filterable: true },
   { key: "date_posted", label: "Posted", filterable: false },
+  { key: "deadline", label: "Deadline", filterable: false },
   { key: "status", label: "Status", filterable: true },
 ];
 

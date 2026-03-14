@@ -78,6 +78,7 @@ def scrape_reed(api_key: str, queries: list, locations: list, max_per_query: int
                         "description_snippet": full_desc[:500],
                         "full_description": full_desc,
                         "date_posted": _parse_reed_date(item.get("date", "")),
+                        "deadline": _parse_reed_date(item.get("expirationDate", "")),
                         "query_matched": query,
                     })
 

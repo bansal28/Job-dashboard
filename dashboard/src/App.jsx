@@ -8,6 +8,7 @@ import PipelineView from "./views/PipelineView";
 import AddJobView from "./views/AddJobView";
 import CsvUploadView from "./views/CsvUploadView";
 import EmailTrackerView from "./views/EmailTrackerView";
+import AnalyticsView from "./views/AnalyticsView";
 
 /* ═══════════════════════════════════════════════════════════
    APP — Root component
@@ -98,6 +99,7 @@ export default function App() {
     { id: "pipeline", label: "Pipeline", icon: ICONS.filter, count: jobs.filter((j) => PIPELINE_COLS.includes(j.status)).length },
     { id: "add", label: "Add Job", icon: ICONS.plus },
     { id: "csv", label: "Browse CSV", icon: ICONS.file },
+    { id: "analytics", label: "Analytics", icon: ICONS.barChart },
     { id: "emails", label: "Email Tracker", icon: ICONS.mail },
   ];
 
@@ -197,6 +199,9 @@ export default function App() {
         )}
         {view === "csv" && (
           <CsvUploadView />
+        )}
+        {view === "analytics" && (
+          <AnalyticsView />
         )}
         {view === "emails" && (
           <EmailTrackerView />

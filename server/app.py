@@ -3,7 +3,7 @@ Job Hunter API Server
 """
 import sys, os, threading
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +15,7 @@ if SERVER_DIR not in sys.path: sys.path.insert(0, SERVER_DIR)
 if SCRAPERS_DIR not in sys.path: sys.path.insert(0, SCRAPERS_DIR)
 
 from database import (init_db, insert_jobs, get_jobs, update_job, add_manual_job,
-    delete_job, get_column_values, get_stats, log_scrape, finish_scrape,
+    delete_job, get_column_values, get_stats, get_analytics, log_scrape, finish_scrape,
     get_last_scrape, recategorize_all)
 from categorizer import enrich_job
 from apply_engine import generate_application
@@ -163,6 +163,22 @@ def all_filters():
 @app.get("/api/stats")
 def stats():
     return get_stats()
+
+@app.get("/api/analytics")
+def analytics():
+    """Full analytics data for the analytics dashboard."""
+    return get_analytics()
+
+@app.get("/api/deadlines/upcoming")
+def upcoming_deadlines():
+    """Get jobs with deadlines in the next 7 days."""
+    data = get_analytics()
+    deadlines = data.get("deadlines", [])
+    today = datetime.now().strftime("%Y-%m-%d")
+    week_later = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    upcoming = [d for d in deadlines if today <= d.get("deadline", "") <= week_later]
+    overdue = [d for d in deadlines if d.get("deadline", "") < today]
+    return {"upcoming": upcoming, "overdue": overdue}
 
 @app.get("/api/config")
 def get_config():

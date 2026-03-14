@@ -110,8 +110,8 @@ def insert_jobs(jobs: list[dict]) -> tuple[int, int]:
                     INSERT INTO jobs (id, dedup_hash, title, company, location, city, is_uk,
                                      job_type, category, salary, source, url,
                                      description_snippet, full_description, date_posted,
-                                     query_matched, status, added_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'New', ?, ?)
+                                     deadline, query_matched, status, added_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'New', ?, ?)
                 """, (
                     j.get("id", dhash), dhash,
                     j.get("title", ""), j.get("company", ""),
@@ -120,7 +120,8 @@ def insert_jobs(jobs: list[dict]) -> tuple[int, int]:
                     j.get("salary", ""), j.get("source", ""),
                     j.get("url", ""), j.get("description_snippet", ""),
                     j.get("full_description", ""),
-                    j.get("date_posted", ""), j.get("query_matched", ""),
+                    j.get("date_posted", ""), j.get("deadline", ""),
+                    j.get("query_matched", ""),
                     now, now,
                 ))
                 new_count += 1
@@ -204,13 +205,113 @@ def get_stats() -> dict:
         rows = db.execute("SELECT status, COUNT(*) as cnt FROM jobs GROUP BY status").fetchall()
         stats = {r["status"]: r["cnt"] for r in rows}
         stats["total"] = sum(stats.values())
-        # Add category breakdown
         cat_rows = db.execute("SELECT category, COUNT(*) as cnt FROM jobs WHERE category != '' GROUP BY category ORDER BY cnt DESC").fetchall()
         stats["categories"] = {r["category"]: r["cnt"] for r in cat_rows}
-        # UK count
         uk_row = db.execute("SELECT COUNT(*) as cnt FROM jobs WHERE is_uk = '1'").fetchone()
         stats["uk_count"] = uk_row["cnt"] if uk_row else 0
         return stats
+
+
+def get_analytics() -> dict:
+    """Comprehensive analytics for the dashboard."""
+    with get_db() as db:
+        result = {}
+
+        # ─── Status funnel ───
+        status_rows = db.execute("SELECT status, COUNT(*) as cnt FROM jobs GROUP BY status").fetchall()
+        result["status_counts"] = {r["status"]: r["cnt"] for r in status_rows}
+        result["total_jobs"] = sum(r["cnt"] for r in status_rows)
+
+        # ─── Category breakdown (for applied+ jobs) ───
+        cat_rows = db.execute("""
+            SELECT category, COUNT(*) as cnt FROM jobs
+            WHERE category != '' GROUP BY category ORDER BY cnt DESC
+        """).fetchall()
+        result["categories"] = {r["category"]: r["cnt"] for r in cat_rows}
+
+        # Applied by category
+        applied_cat = db.execute("""
+            SELECT category, COUNT(*) as cnt FROM jobs
+            WHERE status IN ('Applied', 'Interview', 'Offer', 'Rejected') AND category != ''
+            GROUP BY category ORDER BY cnt DESC
+        """).fetchall()
+        result["applied_by_category"] = {r["category"]: r["cnt"] for r in applied_cat}
+
+        # ─── Location breakdown ───
+        city_rows = db.execute("""
+            SELECT city, COUNT(*) as cnt FROM jobs
+            WHERE city != '' GROUP BY city ORDER BY cnt DESC LIMIT 15
+        """).fetchall()
+        result["top_cities"] = {r["city"]: r["cnt"] for r in city_rows}
+
+        applied_city = db.execute("""
+            SELECT city, COUNT(*) as cnt FROM jobs
+            WHERE status IN ('Applied', 'Interview', 'Offer', 'Rejected') AND city != ''
+            GROUP BY city ORDER BY cnt DESC LIMIT 10
+        """).fetchall()
+        result["applied_by_city"] = {r["city"]: r["cnt"] for r in applied_city}
+
+        # ─── Source breakdown ───
+        source_rows = db.execute("SELECT source, COUNT(*) as cnt FROM jobs GROUP BY source ORDER BY cnt DESC").fetchall()
+        result["sources"] = {r["source"]: r["cnt"] for r in source_rows}
+
+        # ─── Conversion funnel ───
+        total_applied = db.execute("SELECT COUNT(*) as cnt FROM jobs WHERE status IN ('Applied', 'Interview', 'Offer', 'Rejected')").fetchone()["cnt"]
+        total_interview = db.execute("SELECT COUNT(*) as cnt FROM jobs WHERE status IN ('Interview', 'Offer')").fetchone()["cnt"]
+        total_offer = db.execute("SELECT COUNT(*) as cnt FROM jobs WHERE status = 'Offer'").fetchone()["cnt"]
+        total_rejected = db.execute("SELECT COUNT(*) as cnt FROM jobs WHERE status = 'Rejected'").fetchone()["cnt"]
+
+        result["funnel"] = {
+            "applied": total_applied,
+            "interview": total_interview,
+            "offer": total_offer,
+            "rejected": total_rejected,
+            "interview_rate": round(total_interview / total_applied * 100, 1) if total_applied else 0,
+            "offer_rate": round(total_offer / total_applied * 100, 1) if total_applied else 0,
+            "rejection_rate": round(total_rejected / total_applied * 100, 1) if total_applied else 0,
+        }
+
+        # ─── Applications over time (by week) ───
+        timeline = db.execute("""
+            SELECT strftime('%Y-%W', updated_at) as week, status, COUNT(*) as cnt
+            FROM jobs WHERE status != 'New'
+            GROUP BY week, status ORDER BY week
+        """).fetchall()
+        weeks = {}
+        for r in timeline:
+            w = r["week"]
+            if w not in weeks:
+                weeks[w] = {}
+            weeks[w][r["status"]] = r["cnt"]
+        result["timeline"] = weeks
+
+        # ─── Top companies applied to ───
+        company_rows = db.execute("""
+            SELECT company, COUNT(*) as cnt FROM jobs
+            WHERE status IN ('Applied', 'Interview', 'Offer', 'Rejected') AND company != ''
+            GROUP BY company ORDER BY cnt DESC LIMIT 10
+        """).fetchall()
+        result["top_companies"] = {r["company"]: r["cnt"] for r in company_rows}
+
+        # ─── Average match score by status ───
+        # Match scores aren't stored in DB (computed at runtime), so skip this
+
+        # ─── Deadlines ───
+        deadline_rows = db.execute("""
+            SELECT id, title, company, deadline, status FROM jobs
+            WHERE deadline != '' AND deadline IS NOT NULL
+            ORDER BY deadline ASC
+        """).fetchall()
+        result["deadlines"] = [dict(r) for r in deadline_rows]
+
+        # ─── Job type breakdown ───
+        type_rows = db.execute("""
+            SELECT job_type, COUNT(*) as cnt FROM jobs
+            WHERE job_type != '' GROUP BY job_type ORDER BY cnt DESC
+        """).fetchall()
+        result["job_types"] = {r["job_type"]: r["cnt"] for r in type_rows}
+
+        return result
 
 
 def recategorize_all():
