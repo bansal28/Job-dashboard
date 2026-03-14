@@ -1,0 +1,32 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+dist/
+
+# Output data
+scrapers/output/*.csv
+
+# Config with API keys — NEVER commit this
+# Copy config.example.py to config.py and add your keys
+scrapers/config.py
+
+# OS
+.DS_Store
+# Database
+data/jobs.db
+
+# Zip archives
+*.zip
+
+# Personal templates (contain your info)
+templates/resume_base.tex
+templates/cover_letter_base.tex
+
+# Scratch files
+snake.py
+job-hunter-dashboard.jsx
+dashboard/public/jobs.csv
