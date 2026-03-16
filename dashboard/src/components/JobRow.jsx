@@ -249,8 +249,8 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
 
                 <div style={{ flex: 1 }} />
 
-                {/* Delete (manual only) */}
-                {isManual && deleteJob && (
+                {/* Delete */}
+                {deleteJob && (
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteJob(job.id); }}
                     style={{ ...buttonStyle, color: T.red, borderColor: T.redBg }}

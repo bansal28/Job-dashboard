@@ -1,5 +1,5 @@
 import React from "react";
-import { T } from "../theme";
+import { T } from "../theme.jsx";
 
 export default function FormField({ label, value, onChange, placeholder, inputStyle, style = {} }) {
   return (

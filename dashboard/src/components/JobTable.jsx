@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { T, Icon, ICONS, fontMono, buttonStyle } from "../theme";
+import { T, Icon, ICONS, fontMono, fontBody, buttonStyle } from "../theme.jsx";
 import ColumnFilter from "./ColumnFilter";
 import JobRow from "./JobRow";
 
@@ -155,9 +155,11 @@ export default function JobTable({
             onChange={(e) => { setSearchText(e.target.value); setPage(0); }}
             placeholder="Search title, company, location, category..."
             style={{
-              width: "100%", background: T.card, border: `1px solid ${T.border}`,
-              borderRadius: 7, padding: "8px 12px 8px 30px",
-              color: T.text, fontSize: 12, fontFamily: fontMono,
+              width: "100%", background: "rgba(255,255,255,0.03)",
+              border: `1px solid ${T.border}`,
+              borderRadius: 10, padding: "9px 14px 9px 32px",
+              color: T.text, fontSize: 12, fontFamily: fontBody,
+              transition: "border-color 0.15s",
             }}
           />
         </div>
@@ -167,12 +169,12 @@ export default function JobTable({
           <button
             onClick={() => { setUkOnly(!ukOnly); setPage(0); }}
             style={{
-              background: ukOnly ? T.cyanBg : T.card,
+              background: ukOnly ? T.cyanBg : "rgba(255,255,255,0.03)",
               border: `1px solid ${ukOnly ? T.cyanDim : T.border}`,
-              borderRadius: 20, padding: "5px 14px",
+              borderRadius: 20, padding: "6px 16px",
               color: ukOnly ? T.cyan : T.dim,
-              fontSize: 11, cursor: "pointer", fontFamily: fontMono,
-              fontWeight: ukOnly ? 600 : 400,
+              fontSize: 11, cursor: "pointer", fontFamily: fontBody,
+              fontWeight: ukOnly ? 600 : 500, transition: "all 0.15s",
             }}
           >
             <Icon d={ICONS.globe} size={12} /> UK Only ({ukCount})
@@ -211,10 +213,11 @@ export default function JobTable({
                     key={col.key}
                     onClick={() => handleSort(col.key)}
                     style={{
-                      padding: "8px 10px", textAlign: "left",
+                      padding: "9px 10px", textAlign: "left",
                       color: sortBy === col.key ? T.cyan : T.dim,
-                      fontSize: 10, textTransform: "uppercase", letterSpacing: "0.4px",
-                      cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", fontWeight: 500,
+                      fontSize: 10, textTransform: "uppercase", letterSpacing: "0.5px",
+                      cursor: "pointer", userSelect: "none", whiteSpace: "nowrap",
+                      fontWeight: 600, fontFamily: fontBody,
                     }}
                   >
                     {col.label} {sortBy === col.key && <span style={{ fontSize: 8 }}>{sortDir === "asc" ? "\u25B2" : "\u25BC"}</span>}

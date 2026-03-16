@@ -20,7 +20,6 @@ from database import (init_db, insert_jobs, get_jobs, update_job, add_manual_job
 from categorizer import enrich_job
 from apply_engine import generate_application
 from match_engine import score_all_jobs, get_score_breakdown, reload_profile
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -140,10 +139,16 @@ def reload_match_profile():
     profile = reload_profile()
     return {
         "skills_count": len(profile["skills"]),
-        "experience_years": profile["years_experience"],
-        "education": profile["education_level"],
+        "experience_years": profile["years"],
+        "education": profile["education"],
         "domains": sorted(profile["domains"]),
     }
+
+@app.get("/api/salary/predict")
+def salary_predictions():
+    """Predict salary ranges by category using ML on scraped data."""
+    jobs = get_jobs()
+    return predict_salary(jobs)
 
 # ── Deadline tracking ──
 @app.patch("/api/jobs/{job_id}/deadline")
@@ -171,14 +176,17 @@ def analytics():
 
 @app.get("/api/deadlines/upcoming")
 def upcoming_deadlines():
-    """Get jobs with deadlines in the next 7 days."""
+    """Get jobs with deadlines in the next 7 days — only for saved/applied/interview jobs."""
     data = get_analytics()
     deadlines = data.get("deadlines", [])
+    # Only show deadlines for jobs the user cares about
+    active_statuses = {"Saved", "Applied", "Interview"}
+    deadlines = [d for d in deadlines if d.get("status") in active_statuses]
     today = datetime.now().strftime("%Y-%m-%d")
     week_later = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     upcoming = [d for d in deadlines if today <= d.get("deadline", "") <= week_later]
     overdue = [d for d in deadlines if d.get("deadline", "") < today]
-    return {"upcoming": upcoming, "overdue": overdue}
+    return {"upcoming": upcoming[:20], "overdue": overdue[:20]}
 
 @app.get("/api/config")
 def get_config():
@@ -261,12 +269,12 @@ def get_apply_result(job_id: str):
         return {"status": "not_started"}
     return apply_state[job_id]
 
-# ── Gmail Tracker ──
+# ── Gmail Tracker + Pipeline Sync ──
 email_scan_state = {"running": False, "result": None, "error": None}
 
 @app.post("/api/emails/scan")
 def scan_emails(days: int = 30):
-    """Scan Gmail for application updates. Runs in background."""
+    """Scan Gmail, classify emails, and cross-reference with job pipeline."""
     if email_scan_state["running"]:
         return {"status": "running"}
 
@@ -284,27 +292,36 @@ def scan_emails(days: int = 30):
         email_scan_state["running"] = True
         email_scan_state["error"] = None
         try:
-            # Fetch emails
             emails = fetch_emails(GMAIL_ADDRESS, GMAIL_APP_PASSWORD, days=days)
             print(f"[Gmail] Fetched {len(emails)} emails from last {days} days")
 
-            # Classify with LLM
             if emails and GROQ_API_KEY:
                 classified = classify_emails_batch(emails, GROQ_API_KEY)
-                # Filter to job-related only
                 job_emails = [e for e in classified if e.get("is_job_related")]
                 print(f"[Gmail] {len(job_emails)} job-related out of {len(classified)} total")
+
+                # Cross-reference with pipeline
+                all_jobs = get_jobs()
+                company_map = _build_company_map(all_jobs)
+                company_timeline = _build_company_timeline(job_emails, company_map)
+
+                # Auto-sync statuses
+                synced = _auto_sync_statuses(job_emails, company_map)
+
                 email_scan_state["result"] = {
                     "total_scanned": len(emails),
                     "job_related": len(job_emails),
                     "emails": job_emails,
+                    "company_timeline": company_timeline,
+                    "synced_count": synced,
                     "scanned_at": datetime.now().isoformat(),
                 }
             else:
                 email_scan_state["result"] = {
                     "total_scanned": len(emails),
-                    "job_related": 0,
-                    "emails": [],
+                    "job_related": 0, "emails": [],
+                    "company_timeline": {},
+                    "synced_count": 0,
                     "scanned_at": datetime.now().isoformat(),
                 }
         except Exception as e:
@@ -315,6 +332,118 @@ def scan_emails(days: int = 30):
 
     threading.Thread(target=run, daemon=True).start()
     return {"status": "started"}
+
+
+def _build_company_map(jobs: list[dict]) -> dict:
+    """Map company names (lowercase) to job records."""
+    cmap = {}
+    for j in jobs:
+        name = (j.get("company", "") or "").lower().strip()
+        if name:
+            if name not in cmap:
+                cmap[name] = []
+            cmap[name].append(j)
+    return cmap
+
+
+def _build_company_timeline(emails: list[dict], company_map: dict) -> dict:
+    """
+    Build per-company timeline: group emails by company,
+    cross-reference with pipeline jobs.
+    """
+    companies = {}
+
+    for email in emails:
+        company = (email.get("company", "") or "").strip()
+        if not company:
+            continue
+
+        key = company.lower()
+        if key not in companies:
+            # Find matching jobs
+            matched_jobs = []
+            for cname, jobs in company_map.items():
+                if _fuzzy_match(key, cname):
+                    matched_jobs.extend(jobs)
+
+            companies[key] = {
+                "name": company,
+                "emails": [],
+                "jobs": [{"id": j["id"], "title": j["title"], "status": j["status"]} for j in matched_jobs],
+                "latest_category": None,
+                "email_count": 0,
+            }
+
+        companies[key]["emails"].append({
+            "subject": email.get("subject", ""),
+            "category": email.get("category", ""),
+            "date": email.get("date", ""),
+            "summary": email.get("ai_summary", ""),
+            "sender": email.get("sender_name", ""),
+        })
+        companies[key]["email_count"] += 1
+        companies[key]["latest_category"] = email.get("category", "")
+
+    # Sort emails by date within each company
+    for c in companies.values():
+        c["emails"].sort(key=lambda e: e.get("date", ""), reverse=True)
+
+    return companies
+
+
+def _fuzzy_match(a: str, b: str) -> bool:
+    """Simple fuzzy match — checks if company names are similar."""
+    a, b = a.lower().strip(), b.lower().strip()
+    if a == b: return True
+    if a in b or b in a: return True
+    # Remove common suffixes
+    for suffix in [" ltd", " limited", " inc", " plc", " corp", " group", " uk", " solutions", " recruitment", " consulting"]:
+        a = a.replace(suffix, "").strip()
+        b = b.replace(suffix, "").strip()
+    if a == b: return True
+    if a in b or b in a: return True
+    return False
+
+
+def _auto_sync_statuses(emails: list[dict], company_map: dict) -> int:
+    """
+    Auto-update job statuses based on email classifications.
+    e.g., rejection email → mark job as Rejected.
+    """
+    synced = 0
+    status_mapping = {
+        "interview": "Interview",
+        "offer": "Offer",
+        "rejection": "Rejected",
+        "assignment": "Interview",  # coding challenge = interview stage
+        "acknowledgement": "Applied",
+    }
+
+    for email in emails:
+        company = (email.get("company", "") or "").lower().strip()
+        category = email.get("category", "")
+        new_status = status_mapping.get(category)
+
+        if not company or not new_status:
+            continue
+
+        # Find matching jobs
+        for cname, jobs in company_map.items():
+            if _fuzzy_match(company, cname):
+                for job in jobs:
+                    current = job.get("status", "New")
+                    # Only upgrade status, never downgrade
+                    # Priority: New < Applied < Interview < Offer
+                    # Rejected is special — always apply
+                    priority = {"New": 0, "Saved": 1, "Applied": 2, "Interview": 3, "Offer": 4, "Rejected": -1}
+                    cur_p = priority.get(current, 0)
+                    new_p = priority.get(new_status, 0)
+
+                    if new_status == "Rejected" or new_p > cur_p:
+                        update_job(job["id"], {"status": new_status})
+                        synced += 1
+
+    return synced
 
 @app.get("/api/emails/status")
 def email_status():

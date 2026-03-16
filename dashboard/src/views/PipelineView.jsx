@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { T, STATUS_MAP, PIPELINE_COLS, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme";
+import { T, STATUS_MAP, PIPELINE_COLS, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme.jsx";
 
 export default function PipelineView({ jobs, updateStatus, updateNotes }) {
   const [expandedId, setExpandedId] = useState(null);

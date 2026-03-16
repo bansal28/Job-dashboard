@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import api from "./api";
-import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle, exportCSV, GLOBAL_CSS, PIPELINE_COLS } from "./theme";
+import { T, Icon, ICONS, fontMono, fontHeading, fontBody, buttonStyle, exportCSV, GLOBAL_CSS, PIPELINE_COLS } from "./theme.jsx";
 
-// Views
 import DiscoverView from "./views/DiscoverView";
 import PipelineView from "./views/PipelineView";
 import AddJobView from "./views/AddJobView";
@@ -10,33 +9,20 @@ import CsvUploadView from "./views/CsvUploadView";
 import EmailTrackerView from "./views/EmailTrackerView";
 import AnalyticsView from "./views/AnalyticsView";
 
-/* ═══════════════════════════════════════════════════════════
-   APP — Root component
-   Handles: data loading, sidebar navigation, view routing
-   ═══════════════════════════════════════════════════════════ */
 export default function App() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [apiOk, setApiOk] = useState(false);
   const [view, setView] = useState("discover");
 
-  // ─── Data loading ───────────────────────────
   const loadJobs = useCallback(async () => {
     const data = await api.get("/api/jobs");
-    if (Array.isArray(data)) {
-      setJobs(data);
-      setApiOk(true);
-    } else {
-      setApiOk(false);
-    }
+    if (Array.isArray(data)) { setJobs(data); setApiOk(true); } else { setApiOk(false); }
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    loadJobs();
-  }, [loadJobs]);
+  useEffect(() => { loadJobs(); }, [loadJobs]);
 
-  // ─── Job mutations (optimistic + API) ──────
   const updateStatus = useCallback(async (id, status) => {
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, status } : j)));
     api.patch(`/api/jobs/${id}`, { status });
@@ -52,83 +38,52 @@ export default function App() {
     api.del(`/api/jobs/${id}`);
   }, []);
 
-  // ─── Loading screen ─────────────────────────
-  if (loading) {
-    return (
-      <ShellScreen>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ color: T.cyan, fontSize: 28, marginBottom: 10 }}>{"\u25C7"}</div>
-          <div style={{ fontSize: 12, color: T.dim }}>Connecting to API...</div>
-        </div>
-      </ShellScreen>
-    );
-  }
+  if (loading) return <Shell><Loader /></Shell>;
+  if (!apiOk) return <Shell><ErrorState onRetry={loadJobs} /></Shell>;
 
-  // ─── Backend down screen ────────────────────
-  if (!apiOk) {
-    return (
-      <ShellScreen>
-        <div style={{ textAlign: "center", maxWidth: 440 }}>
-          <div style={{ color: T.red, fontSize: 28, marginBottom: 10 }}>{"\u25C7"}</div>
-          <h2 style={{ fontFamily: fontHeading, fontSize: 18, color: T.bright, marginBottom: 8 }}>
-            Backend not running
-          </h2>
-          <p style={{ color: T.dim, fontSize: 12, marginBottom: 16 }}>
-            Start the API server on port 8000:
-          </p>
-          <code style={{
-            display: "block", background: T.card, padding: "12px 16px",
-            borderRadius: 8, color: T.green, fontSize: 12,
-          }}>
-            cd ~/Desktop/jobbot-claude && ./run.sh
-          </code>
-          <button
-            onClick={loadJobs}
-            style={{ ...buttonStyle, marginTop: 16, padding: "8px 20px", color: T.cyan, borderColor: T.cyanDim }}
-          >
-            Retry Connection
-          </button>
-        </div>
-      </ShellScreen>
-    );
-  }
-
-  // ─── Navigation config ─────────────────────
   const navItems = [
     { id: "discover", label: "Discover", icon: ICONS.search, count: jobs.filter((j) => j.status === "New").length },
     { id: "pipeline", label: "Pipeline", icon: ICONS.filter, count: jobs.filter((j) => PIPELINE_COLS.includes(j.status)).length },
+    { id: "analytics", label: "Analytics", icon: ICONS.barChart },
     { id: "add", label: "Add Job", icon: ICONS.plus },
     { id: "csv", label: "Browse CSV", icon: ICONS.file },
-    { id: "analytics", label: "Analytics", icon: ICONS.barChart },
-    { id: "emails", label: "Email Tracker", icon: ICONS.mail },
+    { id: "emails", label: "Emails", icon: ICONS.mail },
   ];
 
-  // ─── Main layout ───────────────────────────
   return (
-    <div style={{ background: T.bg, color: T.text, minHeight: "100vh", fontFamily: fontMono, display: "flex" }}>
-      <link
-        href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@400;500;600;700&display=swap"
-        rel="stylesheet"
-      />
+    <div style={{ background: T.bg, color: T.text, minHeight: "100vh", fontFamily: fontBody, display: "flex" }}>
       <style>{GLOBAL_CSS}</style>
 
       {/* ─── Sidebar ─── */}
       <nav style={{
-        width: 190, borderRight: `1px solid ${T.border}`, padding: "16px 0",
-        flexShrink: 0, display: "flex", flexDirection: "column", background: T.surface,
+        width: 220, borderRight: `1px solid ${T.border}`, padding: "20px 0",
+        flexShrink: 0, display: "flex", flexDirection: "column",
+        background: "rgba(8,12,20,0.95)", backdropFilter: "blur(20px)",
       }}>
         {/* Logo */}
-        <div style={{ padding: "0 14px 16px", borderBottom: `1px solid ${T.border}` }}>
-          <h1 style={{ fontFamily: fontHeading, fontSize: 16, fontWeight: 700, color: T.white }}>
-            <span style={{ color: T.cyan }}>{"\u25C7"}</span> Job Hunter
-          </h1>
-          <div style={{ fontSize: 10, color: T.dim, marginTop: 3 }}>
-            {jobs.length} jobs in database
+        <div style={{ padding: "0 20px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 10,
+              background: `linear-gradient(135deg, ${T.cyan}, ${T.purple})`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 16, fontWeight: 800, color: T.bg,
+            }}>
+              JH
+            </div>
+            <div>
+              <div style={{ fontFamily: fontHeading, fontSize: 15, fontWeight: 700, color: T.white, letterSpacing: "-0.3px" }}>
+                Job Hunter
+              </div>
+              <div style={{ fontSize: 10, color: T.dim, fontFamily: fontMono }}>
+                {jobs.length.toLocaleString()} jobs
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Nav items */}
-        <div style={{ padding: "10px 6px", flex: 1 }}>
+        {/* Nav */}
+        <div style={{ padding: "0 10px", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
           {navItems.map((item) => {
             const isActive = view === item.id;
             return (
@@ -136,22 +91,24 @@ export default function App() {
                 key={item.id}
                 onClick={() => setView(item.id)}
                 style={{
-                  display: "flex", alignItems: "center", gap: 8, width: "100%",
-                  padding: "9px 10px", marginBottom: 1,
+                  display: "flex", alignItems: "center", gap: 10, width: "100%",
+                  padding: "10px 12px", border: "none", borderRadius: 10,
                   background: isActive ? T.cyanBg : "transparent",
-                  border: "none", borderRadius: 7,
                   color: isActive ? T.cyan : T.dim,
-                  fontSize: 12, fontFamily: fontMono, cursor: "pointer", textAlign: "left",
+                  fontSize: 12.5, fontFamily: fontBody, fontWeight: isActive ? 600 : 500,
+                  cursor: "pointer", textAlign: "left",
+                  transition: "all 0.15s ease",
+                  borderLeft: isActive ? `2px solid ${T.cyan}` : "2px solid transparent",
                 }}
               >
-                <Icon d={item.icon} size={15} style={{ opacity: isActive ? 1 : 0.5 }} />
+                <Icon d={item.icon} size={16} style={{ opacity: isActive ? 1 : 0.5, flexShrink: 0 }} />
                 <span style={{ flex: 1 }}>{item.label}</span>
                 {item.count > 0 && (
                   <span style={{
-                    fontSize: 9,
-                    background: isActive ? T.cyanDim : T.card,
+                    fontSize: 10, fontFamily: fontMono, fontWeight: 600,
+                    background: isActive ? "rgba(99,220,255,0.2)" : "rgba(255,255,255,0.05)",
                     color: isActive ? T.cyan : T.dim,
-                    padding: "1px 6px", borderRadius: 8,
+                    padding: "2px 8px", borderRadius: 10, minWidth: 28, textAlign: "center",
                   }}>
                     {item.count}
                   </span>
@@ -161,69 +118,88 @@ export default function App() {
           })}
         </div>
 
-        {/* Bottom actions */}
-        <div style={{ padding: "8px 6px", borderTop: `1px solid ${T.border}` }}>
+        {/* Bottom */}
+        <div style={{ padding: "12px 10px 0", borderTop: `1px solid ${T.border}`, margin: "0 10px" }}>
           <button
             onClick={() => exportCSV(jobs)}
             style={{
-              display: "flex", alignItems: "center", gap: 7, width: "100%",
-              padding: "7px 10px", background: "transparent", border: "none",
-              borderRadius: 5, color: T.dim, fontSize: 11, cursor: "pointer", fontFamily: fontMono,
+              display: "flex", alignItems: "center", gap: 8, width: "100%",
+              padding: "9px 12px", background: "transparent", border: "none",
+              borderRadius: 8, color: T.dim, fontSize: 11.5, cursor: "pointer",
+              fontFamily: fontBody, fontWeight: 500, transition: "color 0.15s",
             }}
           >
-            <Icon d={ICONS.download} size={12} /> Export All Jobs
+            <Icon d={ICONS.download} size={14} style={{ opacity: 0.5 }} /> Export All
           </button>
         </div>
       </nav>
 
-      {/* ─── Main content ─── */}
+      {/* ─── Main ─── */}
       <main style={{ flex: 1, overflow: "auto", minHeight: "100vh" }}>
-        {view === "discover" && (
-          <DiscoverView
-            jobs={jobs}
-            updateStatus={updateStatus}
-            updateNotes={updateNotes}
-            deleteJob={deleteJob}
-            reload={loadJobs}
-          />
-        )}
-        {view === "pipeline" && (
-          <PipelineView
-            jobs={jobs}
-            updateStatus={updateStatus}
-            updateNotes={updateNotes}
-          />
-        )}
-        {view === "add" && (
-          <AddJobView reload={loadJobs} />
-        )}
-        {view === "csv" && (
-          <CsvUploadView />
-        )}
-        {view === "analytics" && (
-          <AnalyticsView />
-        )}
-        {view === "emails" && (
-          <EmailTrackerView />
-        )}
+        {view === "discover" && <DiscoverView jobs={jobs} updateStatus={updateStatus} updateNotes={updateNotes} deleteJob={deleteJob} reload={loadJobs} />}
+        {view === "pipeline" && <PipelineView jobs={jobs} updateStatus={updateStatus} updateNotes={updateNotes} />}
+        {view === "add" && <AddJobView reload={loadJobs} />}
+        {view === "csv" && <CsvUploadView />}
+        {view === "analytics" && <AnalyticsView />}
+        {view === "emails" && <EmailTrackerView />}
       </main>
     </div>
   );
 }
 
-/* ─── Shell screen wrapper for loading/error states ─── */
-function ShellScreen({ children }) {
+function Shell({ children }) {
   return (
-    <div style={{
-      background: T.bg, color: T.text, minHeight: "100vh",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: fontMono,
-    }}>
-      <link
-        href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@400;500;600;700&display=swap"
-        rel="stylesheet"
-      />
+    <div style={{ background: T.bg, color: T.text, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: fontBody }}>
+      <style>{GLOBAL_CSS}</style>
       {children}
+    </div>
+  );
+}
+
+function Loader() {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: 12, margin: "0 auto 14px",
+        background: `linear-gradient(135deg, ${T.cyan}, ${T.purple})`,
+        animation: "pulse 1.5s ease infinite",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 18, fontWeight: 800, color: T.bg,
+      }}>JH</div>
+      <div style={{ fontSize: 12, color: T.dim, fontFamily: fontMono }}>Connecting...</div>
+    </div>
+  );
+}
+
+function ErrorState({ onRetry }) {
+  return (
+    <div style={{ textAlign: "center", maxWidth: 420 }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: 12, margin: "0 auto 14px",
+        background: T.redBg, border: `1px solid ${T.red}30`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 18, color: T.red,
+      }}>!</div>
+      <h2 style={{ fontFamily: fontHeading, fontSize: 18, fontWeight: 700, color: T.bright, marginBottom: 8 }}>
+        Backend not running
+      </h2>
+      <p style={{ color: T.dim, fontSize: 12, marginBottom: 16, lineHeight: 1.6 }}>
+        Start the API server:
+      </p>
+      <code style={{
+        display: "block", background: T.card, padding: "14px 18px",
+        borderRadius: 10, color: T.green, fontSize: 12, fontFamily: fontMono,
+        border: `1px solid ${T.border}`,
+      }}>
+        cd ~/Desktop/jobbot-claude && ./run.sh
+      </code>
+      <button onClick={onRetry} style={{
+        ...buttonStyle, marginTop: 18, padding: "10px 24px",
+        color: T.cyan, borderColor: T.cyanDim,
+        background: T.cyanBg,
+      }}>
+        Retry Connection
+      </button>
     </div>
   );
 }

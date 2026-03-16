@@ -1,44 +1,56 @@
 import React from "react";
 
 /* ═══════════════════════════════════════════════════════════
-   COLORS
+   COLORS — Refined dark glass palette
    ═══════════════════════════════════════════════════════════ */
 export const T = {
-  bg: "#05080e",
-  surface: "#0a0f18",
-  card: "#0f1520",
-  elevated: "#141c28",
-  border: "#1a2235",
-  borderLight: "#243048",
-  text: "#bcc5d3",
-  dim: "#4e5a6e",
-  bright: "#e4e9f0",
-  white: "#f5f7fa",
-  cyan: "#22d3ee",
-  cyanDim: "#0e7490",
-  cyanBg: "#0b2530",
-  green: "#34d399",
-  greenBg: "#0c2a1e",
-  yellow: "#fbbf24",
-  yellowBg: "#251f0c",
-  purple: "#a78bfa",
-  purpleBg: "#16103a",
-  red: "#f87171",
-  redBg: "#2a1215",
-  blue: "#60a5fa",
-  blueBg: "#0f1d3a",
+  // Backgrounds
+  bg: "#06090f",
+  surface: "rgba(12, 17, 28, 0.75)",
+  card: "rgba(16, 22, 36, 0.8)",
+  elevated: "rgba(20, 28, 44, 0.9)",
+  glass: "rgba(16, 22, 36, 0.5)",
+
+  // Borders
+  border: "rgba(255,255,255,0.06)",
+  borderLight: "rgba(255,255,255,0.1)",
+  borderGlow: "rgba(99,220,255,0.15)",
+
+  // Text
+  text: "#a0aec0",
+  dim: "#4a5568",
+  bright: "#e2e8f0",
+  white: "#f7fafc",
+
+  // Accent — electric teal
+  cyan: "#63dcff",
+  cyanDim: "#2a8ba8",
+  cyanBg: "rgba(99,220,255,0.08)",
+  cyanGlow: "rgba(99,220,255,0.25)",
+
+  // Status colors
+  green: "#48e0a0",
+  greenBg: "rgba(72,224,160,0.08)",
+  yellow: "#ffc857",
+  yellowBg: "rgba(255,200,87,0.08)",
+  purple: "#b48cff",
+  purpleBg: "rgba(180,140,255,0.08)",
+  red: "#ff6b81",
+  redBg: "rgba(255,107,129,0.08)",
+  blue: "#6cb4ff",
+  blueBg: "rgba(108,180,255,0.08)",
 };
 
 /* ═══════════════════════════════════════════════════════════
    STATUS CONFIG
    ═══════════════════════════════════════════════════════════ */
 export const STATUS_MAP = {
-  New:       { color: T.blue,   bg: T.blueBg,   border: "#1e40af" },
-  Saved:     { color: T.cyan,   bg: T.cyanBg,   border: T.cyanDim },
-  Applied:   { color: T.yellow, bg: T.yellowBg, border: "#854d0e" },
-  Interview: { color: T.purple, bg: T.purpleBg, border: "#4c1d95" },
-  Offer:     { color: T.green,  bg: T.greenBg,  border: "#166534" },
-  Rejected:  { color: T.red,    bg: T.redBg,    border: "#991b1b" },
+  New:       { color: T.blue,   bg: T.blueBg,   border: "rgba(108,180,255,0.25)" },
+  Saved:     { color: T.cyan,   bg: T.cyanBg,   border: "rgba(99,220,255,0.25)" },
+  Applied:   { color: T.yellow, bg: T.yellowBg, border: "rgba(255,200,87,0.25)" },
+  Interview: { color: T.purple, bg: T.purpleBg, border: "rgba(180,140,255,0.25)" },
+  Offer:     { color: T.green,  bg: T.greenBg,  border: "rgba(72,224,160,0.25)" },
+  Rejected:  { color: T.red,    bg: T.redBg,    border: "rgba(255,107,129,0.25)" },
 };
 
 export const ALL_STATUSES = Object.keys(STATUS_MAP);
@@ -61,7 +73,7 @@ export const CATEGORY_COLORS = {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   ICONS — SVG path data
+   ICONS
    ═══════════════════════════════════════════════════════════ */
 export const ICONS = {
   search: "M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z",
@@ -94,43 +106,81 @@ export function Icon({ d, size = 14, ...props }) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   FONTS & SHARED STYLES
+   FONTS
    ═══════════════════════════════════════════════════════════ */
-export const fontMono = "'DM Mono', 'IBM Plex Mono', monospace";
-export const fontHeading = "'Outfit', 'DM Sans', sans-serif";
+export const fontMono = "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace";
+export const fontHeading = "'Plus Jakarta Sans', 'General Sans', sans-serif";
+export const fontBody = "'Plus Jakarta Sans', 'General Sans', sans-serif";
 
 export const buttonStyle = {
-  background: T.card,
+  background: "rgba(255,255,255,0.04)",
   border: `1px solid ${T.border}`,
-  borderRadius: 6,
-  padding: "6px 12px",
+  borderRadius: 8,
+  padding: "7px 14px",
   color: T.dim,
   fontSize: 11,
   cursor: "pointer",
   display: "inline-flex",
   alignItems: "center",
-  gap: 5,
-  fontFamily: fontMono,
+  gap: 6,
+  fontFamily: fontBody,
+  fontWeight: 500,
+  transition: "all 0.15s ease",
+  backdropFilter: "blur(8px)",
 };
 
 export const GLOBAL_CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  ::selection { background: ${T.cyanDim}; }
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 3px; }
+  ::selection { background: ${T.cyanGlow}; color: ${T.white}; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
+    from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: none; }
   }
-  .fade-in { animation: fadeIn 0.2s ease; }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .fade-in { animation: fadeIn 0.25s ease; }
+  .slide-in { animation: slideIn 0.2s ease; }
+
   input:focus, textarea:focus, select:focus {
     outline: none;
     border-color: ${T.cyanDim} !important;
+    box-shadow: 0 0 0 3px ${T.cyanGlow};
   }
+
+  button:hover {
+    border-color: rgba(255,255,255,0.12) !important;
+    background: rgba(255,255,255,0.06) !important;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.02'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  tr:hover td { transition: background 0.1s; }
 `;
 
 /* ═══════════════════════════════════════════════════════════
-   UTILITY FUNCTIONS
+   UTILITIES
    ═══════════════════════════════════════════════════════════ */
 export function daysAgo(dateStr) {
   if (!dateStr) return "";

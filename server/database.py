@@ -188,7 +188,7 @@ def add_manual_job(job: dict) -> str:
 
 def delete_job(job_id: str) -> bool:
     with get_db() as db:
-        return db.execute("DELETE FROM jobs WHERE id = ? AND source = 'Manual'", (job_id,)).rowcount > 0
+        return db.execute("DELETE FROM jobs WHERE id = ?", (job_id,)).rowcount > 0
 
 
 def get_column_values(column: str) -> list[str]:

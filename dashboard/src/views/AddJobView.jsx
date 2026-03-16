@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import api from "../api";
-import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme";
+import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme.jsx";
 import FormField from "../components/FormField";
 
 export default function AddJobView({ reload }) {
