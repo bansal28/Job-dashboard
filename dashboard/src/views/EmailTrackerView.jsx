@@ -29,11 +29,22 @@ export default function EmailTrackerView() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [days, setDays] = useState(30);
-  const [viewMode, setViewMode] = useState("companies"); // companies | emails
+  const [viewMode, setViewMode] = useState("tasks"); // tasks | companies | emails
   const [filter, setFilter] = useState("all");
   const [expandedCompany, setExpandedCompany] = useState(null);
   const [expandedEmail, setExpandedEmail] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [taskSummary, setTaskSummary] = useState(null);
   const pollRef = useRef(null);
+
+  const loadTasks = useCallback(async () => {
+    const [t, s] = await Promise.all([
+      api.get("/api/tasks"),
+      api.get("/api/tasks/summary"),
+    ]);
+    if (t) setTasks(t);
+    if (s) setTaskSummary(s);
+  }, []);
 
   useEffect(() => {
     api.get("/api/emails/config").then((c) => { if (c) setConfig(c); });
@@ -41,7 +52,8 @@ export default function EmailTrackerView() {
       if (s && s.result) setResult(s.result);
       if (s && s.running) { setScanning(true); startPolling(); }
     });
-  }, []);
+    loadTasks();
+  }, [loadTasks]);
 
   const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -54,9 +66,10 @@ export default function EmailTrackerView() {
         setScanning(false);
         if (s.result) setResult(s.result);
         if (s.error) setError(s.error);
+        loadTasks(); // Refresh tasks after scan
       }
     }, 2000);
-  }, []);
+  }, [loadTasks]);
 
   const handleScan = async () => {
     setScanning(true); setError(null);
@@ -170,6 +183,7 @@ export default function EmailTrackerView() {
 
           {/* View toggle + filters */}
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+            <ViewToggle label={`Tasks${taskSummary ? ` (${taskSummary.pending})` : ""}`} active={viewMode === "tasks"} onClick={() => setViewMode("tasks")} />
             <ViewToggle label="Companies" active={viewMode === "companies"} onClick={() => setViewMode("companies")} />
             <ViewToggle label="All Emails" active={viewMode === "emails"} onClick={() => setViewMode("emails")} />
             <div style={{ flex: 1 }} />
@@ -184,6 +198,11 @@ export default function EmailTrackerView() {
                 );
               })}
           </div>
+
+          {/* Tasks View */}
+          {viewMode === "tasks" && (
+            <TasksPanel tasks={tasks} summary={taskSummary} onUpdate={loadTasks} />
+          )}
 
           {/* Company View */}
           {viewMode === "companies" && (
@@ -369,6 +388,160 @@ export default function EmailTrackerView() {
           <div style={{ fontSize: 11, color: T.dim, maxWidth: 360, margin: "0 auto", lineHeight: 1.6 }}>
             We'll read your job emails, classify them (acknowledgement, interview, rejection, etc.),
             group by company, and auto-update your pipeline.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Sub-components ─── */
+
+/* ─── Tasks Panel ─── */
+
+function TasksPanel({ tasks, summary, onUpdate }) {
+  const pending = tasks.filter((t) => t.status === "pending");
+  const completed = tasks.filter((t) => t.status === "completed");
+
+  const handleComplete = async (taskId) => {
+    await api.post(`/api/tasks/${taskId}/complete`, {});
+    onUpdate();
+  };
+
+  const handleReopen = async (taskId) => {
+    await api.post(`/api/tasks/${taskId}/reopen`, {});
+    onUpdate();
+  };
+
+  if (tasks.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "50px 24px" }}>
+        <div style={{ fontSize: 36, marginBottom: 10, opacity: 0.2 }}>📋</div>
+        <div style={{ fontSize: 14, color: T.bright, fontWeight: 500, marginBottom: 4 }}>No tasks yet</div>
+        <div style={{ fontSize: 11, color: T.dim, maxWidth: 340, margin: "0 auto", lineHeight: 1.6 }}>
+          Tasks are auto-created when emails detect assignments, coding challenges, or take-home tests.
+          Scan your inbox to populate tasks.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Summary */}
+      {summary && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{
+            flex: 1, background: T.yellowBg, border: `1px solid ${T.yellow}25`,
+            borderRadius: 10, padding: "12px 16px",
+          }}>
+            <div style={{ fontSize: 24, fontWeight: 700, color: T.yellow, fontFamily: fontHeading }}>{summary.pending}</div>
+            <div style={{ fontSize: 10, color: T.dim, textTransform: "uppercase", letterSpacing: "0.4px" }}>Pending</div>
+          </div>
+          <div style={{
+            flex: 1, background: T.greenBg, border: `1px solid ${T.green}25`,
+            borderRadius: 10, padding: "12px 16px",
+          }}>
+            <div style={{ fontSize: 24, fontWeight: 700, color: T.green, fontFamily: fontHeading }}>{summary.completed}</div>
+            <div style={{ fontSize: 10, color: T.dim, textTransform: "uppercase", letterSpacing: "0.4px" }}>Completed</div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending tasks */}
+      {pending.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: T.yellow, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+            ⏳ To Do ({pending.length})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {pending.map((task) => (
+              <div key={task.id} style={{
+                background: T.card, border: `1px solid ${T.yellow}20`,
+                borderLeft: `3px solid ${T.yellow}`,
+                borderRadius: 10, padding: "12px 16px",
+                display: "flex", alignItems: "flex-start", gap: 12,
+              }}>
+                {/* Checkbox */}
+                <div
+                  onClick={() => handleComplete(task.id)}
+                  style={{
+                    width: 20, height: 20, borderRadius: 6, marginTop: 2,
+                    border: `2px solid ${T.yellow}60`, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0, transition: "all 0.12s",
+                  }}
+                  title="Mark as completed"
+                />
+                {/* Task info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, color: T.bright, fontWeight: 500 }}>
+                    {task.title}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.cyan, marginTop: 2 }}>
+                    {task.company}
+                  </div>
+                  {task.description && (
+                    <div style={{ fontSize: 10.5, color: T.dim, marginTop: 4, lineHeight: 1.5 }}>
+                      {task.description}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 9, color: T.dim, marginTop: 4 }}>
+                    Created {formatDate(task.created_at)}
+                    {task.due_date && <span> · Due {formatDate(task.due_date)}</span>}
+                  </div>
+                </div>
+                {/* Type badge */}
+                <span style={{
+                  fontSize: 9, color: T.yellow, background: T.yellowBg,
+                  padding: "2px 8px", borderRadius: 4, fontWeight: 600, flexShrink: 0,
+                }}>
+                  📝 {task.task_type || "assignment"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Completed tasks */}
+      {completed.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: T.green, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>
+            ✓ Completed ({completed.length})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {completed.map((task) => (
+              <div key={task.id} style={{
+                background: "rgba(255,255,255,0.02)", border: `1px solid ${T.border}`,
+                borderLeft: `3px solid ${T.green}40`,
+                borderRadius: 8, padding: "10px 14px",
+                display: "flex", alignItems: "center", gap: 10, opacity: 0.7,
+              }}>
+                {/* Checked box */}
+                <div
+                  onClick={() => handleReopen(task.id)}
+                  style={{
+                    width: 20, height: 20, borderRadius: 6,
+                    border: `2px solid ${T.green}60`, background: T.greenBg,
+                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                  title="Reopen task"
+                >
+                  <Icon d={ICONS.check} size={12} style={{ color: T.green }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: T.dim, textDecoration: "line-through" }}>
+                    {task.title}
+                  </div>
+                  <div style={{ fontSize: 10, color: T.dim }}>{task.company}</div>
+                </div>
+                <span style={{ fontSize: 9, color: T.dim }}>
+                  {task.completed_at ? formatDate(task.completed_at) : ""}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}

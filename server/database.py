@@ -73,6 +73,25 @@ def init_db():
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_is_uk ON jobs(is_uk)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_city ON jobs(city)")
 
+        # Tasks table — tracks assignments, tests, follow-ups per job
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT DEFAULT '',
+                company TEXT DEFAULT '',
+                task_type TEXT DEFAULT '',
+                title TEXT DEFAULT '',
+                description TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                source_email_subject TEXT DEFAULT '',
+                created_at TEXT DEFAULT '',
+                completed_at TEXT DEFAULT '',
+                due_date TEXT DEFAULT ''
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_tasks_company ON tasks(company)")
+
         # Migration: add new columns to existing tables
         _migrate(db)
 
@@ -85,6 +104,9 @@ def _migrate(db):
         "city": "TEXT DEFAULT ''",
         "is_uk": "TEXT DEFAULT '0'",
         "deadline": "TEXT DEFAULT ''",
+        "tier": "TEXT DEFAULT ''",
+        "visa_status": "TEXT DEFAULT ''",
+        "company_tier": "TEXT DEFAULT ''",
     }
     for col, typedef in migrations.items():
         if col not in existing:
@@ -110,8 +132,9 @@ def insert_jobs(jobs: list[dict]) -> tuple[int, int]:
                     INSERT INTO jobs (id, dedup_hash, title, company, location, city, is_uk,
                                      job_type, category, salary, source, url,
                                      description_snippet, full_description, date_posted,
-                                     deadline, query_matched, status, added_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'New', ?, ?)
+                                     deadline, tier, visa_status, company_tier,
+                                     query_matched, status, added_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'New', ?, ?)
                 """, (
                     j.get("id", dhash), dhash,
                     j.get("title", ""), j.get("company", ""),
@@ -121,6 +144,8 @@ def insert_jobs(jobs: list[dict]) -> tuple[int, int]:
                     j.get("url", ""), j.get("description_snippet", ""),
                     j.get("full_description", ""),
                     j.get("date_posted", ""), j.get("deadline", ""),
+                    j.get("tier", ""), j.get("visa_status", ""),
+                    j.get("company_tier", ""),
                     j.get("query_matched", ""),
                     now, now,
                 ))
@@ -192,7 +217,7 @@ def delete_job(job_id: str) -> bool:
 
 
 def get_column_values(column: str) -> list[str]:
-    allowed = {"title", "company", "location", "city", "job_type", "category", "salary", "source", "status", "is_uk"}
+    allowed = {"title", "company", "location", "city", "job_type", "category", "salary", "source", "status", "is_uk", "tier"}
     if column not in allowed:
         return []
     with get_db() as db:
@@ -346,3 +371,104 @@ def get_last_scrape():
     with get_db() as db:
         row = db.execute("SELECT * FROM scrape_log ORDER BY id DESC LIMIT 1").fetchone()
         return dict(row) if row else None
+
+
+# ═══════════════════════════════════════════════════════════
+# TASKS — Assignments, tests, follow-ups per company/job
+# ═══════════════════════════════════════════════════════════
+
+def add_task(task: dict) -> int:
+    """Add a new task. Returns task ID."""
+    now = datetime.now().isoformat()
+    with get_db() as db:
+        # Check for duplicate (same company + similar title)
+        existing = db.execute(
+            "SELECT id FROM tasks WHERE company = ? AND title = ? AND status = 'pending'",
+            (task.get("company", ""), task.get("title", ""))
+        ).fetchone()
+        if existing:
+            return existing["id"]
+
+        cursor = db.execute("""
+            INSERT INTO tasks (job_id, company, task_type, title, description,
+                             status, source_email_subject, created_at, due_date)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        """, (
+            task.get("job_id", ""),
+            task.get("company", ""),
+            task.get("task_type", "assignment"),
+            task.get("title", ""),
+            task.get("description", ""),
+            task.get("source_email_subject", ""),
+            now,
+            task.get("due_date", ""),
+        ))
+        return cursor.lastrowid
+
+
+def complete_task_by_company(company: str) -> int:
+    """Mark all pending tasks for a company as completed."""
+    now = datetime.now().isoformat()
+    with get_db() as db:
+        # Fuzzy match — check multiple variations
+        count = 0
+        rows = db.execute("SELECT id, company FROM tasks WHERE status = 'pending'").fetchall()
+        for row in rows:
+            if _fuzzy_company_match(company, row["company"]):
+                db.execute("UPDATE tasks SET status = 'completed', completed_at = ? WHERE id = ?", (now, row["id"]))
+                count += 1
+        return count
+
+
+def get_tasks(status: str = None) -> list[dict]:
+    """Get all tasks, optionally filtered by status."""
+    with get_db() as db:
+        if status:
+            rows = db.execute("SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC", (status,)).fetchall()
+        else:
+            rows = db.execute("SELECT * FROM tasks ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_task(task_id: int, updates: dict) -> bool:
+    """Update a task's status or other fields."""
+    allowed = {"status", "completed_at", "due_date", "description"}
+    fields = {k: v for k, v in updates.items() if k in allowed}
+    if not fields:
+        return False
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values()) + [task_id]
+    with get_db() as db:
+        return db.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values).rowcount > 0
+
+
+def get_tasks_summary() -> dict:
+    """Get task counts by status and by company."""
+    with get_db() as db:
+        pending = db.execute("SELECT COUNT(*) as cnt FROM tasks WHERE status = 'pending'").fetchone()["cnt"]
+        completed = db.execute("SELECT COUNT(*) as cnt FROM tasks WHERE status = 'completed'").fetchone()["cnt"]
+
+        # By company
+        company_rows = db.execute("""
+            SELECT company, status, COUNT(*) as cnt FROM tasks
+            GROUP BY company, status ORDER BY company
+        """).fetchall()
+        companies = {}
+        for r in company_rows:
+            c = r["company"]
+            if c not in companies:
+                companies[c] = {"pending": 0, "completed": 0}
+            companies[c][r["status"]] = r["cnt"]
+
+        return {"pending": pending, "completed": completed, "total": pending + completed, "by_company": companies}
+
+
+def _fuzzy_company_match(a: str, b: str) -> bool:
+    """Simple fuzzy match for company names."""
+    a, b = a.lower().strip(), b.lower().strip()
+    if a == b or a in b or b in a:
+        return True
+    for suffix in [" ltd", " limited", " inc", " plc", " corp", " group", " uk"]:
+        a = a.replace(suffix, "").strip()
+        b = b.replace(suffix, "").strip()
+    return a == b or a in b or b in a

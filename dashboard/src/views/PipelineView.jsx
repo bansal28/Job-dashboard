@@ -1,17 +1,72 @@
-import React, { useState } from "react";
-import { T, STATUS_MAP, PIPELINE_COLS, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme.jsx";
+import React, { useState, useEffect, useCallback } from "react";
+import api from "../api";
+import { T, STATUS_MAP, PIPELINE_COLS, Icon, ICONS, fontMono, fontHeading, fontBody, buttonStyle } from "../theme.jsx";
 
 export default function PipelineView({ jobs, updateStatus, updateNotes }) {
   const [expandedId, setExpandedId] = useState(null);
-  const rejectedJobs = jobs.filter((j) => j.status === "Rejected");
   const [showRejected, setShowRejected] = useState(false);
+  const [tasks, setTasks] = useState([]);
+  const rejectedJobs = jobs.filter((j) => j.status === "Rejected");
   const nextStatusMap = { Saved: "Applied", Applied: "Interview", Interview: "Offer" };
+
+  const loadTasks = useCallback(async () => {
+    const t = await api.get("/api/tasks");
+    if (t) setTasks(t);
+  }, []);
+
+  useEffect(() => { loadTasks(); }, [loadTasks]);
+
+  // Group tasks by company (lowercase) for matching
+  const tasksByCompany = {};
+  tasks.forEach((t) => {
+    const key = (t.company || "").toLowerCase().trim();
+    if (key) {
+      if (!tasksByCompany[key]) tasksByCompany[key] = [];
+      tasksByCompany[key].push(t);
+    }
+  });
+
+  const getJobTasks = (job) => {
+    const company = (job.company || "").toLowerCase().trim();
+    if (!company) return [];
+    // Fuzzy: check if any task company contains or is contained by job company
+    const matched = [];
+    for (const [key, ts] of Object.entries(tasksByCompany)) {
+      if (key === company || key.includes(company) || company.includes(key)) {
+        matched.push(...ts);
+      }
+    }
+    return matched;
+  };
+
+  const handleCompleteTask = async (taskId) => {
+    await api.post(`/api/tasks/${taskId}/complete`, {});
+    loadTasks();
+  };
+
+  const handleReopenTask = async (taskId) => {
+    await api.post(`/api/tasks/${taskId}/reopen`, {});
+    loadTasks();
+  };
+
+  // Task summary for header
+  const pendingCount = tasks.filter((t) => t.status === "pending").length;
 
   return (
     <div className="fade-in" style={{ padding: "20px 24px" }}>
-      <h2 style={{ fontFamily: fontHeading, fontSize: 18, fontWeight: 600, color: T.bright, marginBottom: 4 }}>
-        Pipeline
-      </h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <h2 style={{ fontFamily: fontHeading, fontSize: 18, fontWeight: 600, color: T.bright, flex: 1 }}>
+          Pipeline
+        </h2>
+        {pendingCount > 0 && (
+          <span style={{
+            fontSize: 11, color: T.yellow, background: T.yellowBg,
+            padding: "4px 12px", borderRadius: 8, fontWeight: 600,
+          }}>
+            📝 {pendingCount} pending task{pendingCount > 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
       <p style={{ fontSize: 11, color: T.dim, marginBottom: 20 }}>Track your applications through each stage</p>
 
       {/* Kanban columns */}
@@ -34,6 +89,9 @@ export default function PipelineView({ jobs, updateStatus, updateNotes }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {columnJobs.map((job) => {
                   const isExpanded = expandedId === job.id;
+                  const jobTasks = getJobTasks(job);
+                  const pendingTasks = jobTasks.filter((t) => t.status === "pending");
+                  const completedTasks = jobTasks.filter((t) => t.status === "completed");
 
                   return (
                     <div
@@ -52,9 +110,65 @@ export default function PipelineView({ jobs, updateStatus, updateNotes }) {
                         {job.category ? ` \u2022 ${job.category}` : ""}
                       </div>
 
+                      {/* Task badge (always visible if tasks exist) */}
+                      {jobTasks.length > 0 && (
+                        <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                          {pendingTasks.length > 0 && (
+                            <span style={{
+                              fontSize: 9, color: T.yellow, background: T.yellowBg,
+                              padding: "2px 8px", borderRadius: 4, fontWeight: 600,
+                            }}>
+                              📝 {pendingTasks.length} to do
+                            </span>
+                          )}
+                          {completedTasks.length > 0 && (
+                            <span style={{
+                              fontSize: 9, color: T.green, background: T.greenBg,
+                              padding: "2px 8px", borderRadius: 4, fontWeight: 600,
+                            }}>
+                              ✓ {completedTasks.length} done
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       {/* Expanded */}
                       {isExpanded && (
                         <div className="fade-in" style={{ marginTop: 10, borderTop: `1px solid ${T.border}`, paddingTop: 8 }} onClick={(e) => e.stopPropagation()}>
+                          {/* Tasks section */}
+                          {jobTasks.length > 0 && (
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ fontSize: 10, color: T.dim, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.4px", marginBottom: 6 }}>
+                                Tasks
+                              </div>
+                              {jobTasks.map((task) => (
+                                <div key={task.id} style={{
+                                  display: "flex", alignItems: "center", gap: 8, padding: "4px 0",
+                                }}>
+                                  <div
+                                    onClick={() => task.status === "pending" ? handleCompleteTask(task.id) : handleReopenTask(task.id)}
+                                    style={{
+                                      width: 16, height: 16, borderRadius: 4, flexShrink: 0, cursor: "pointer",
+                                      border: `1.5px solid ${task.status === "completed" ? T.green : T.yellow}60`,
+                                      background: task.status === "completed" ? T.greenBg : "transparent",
+                                      display: "flex", alignItems: "center", justifyContent: "center",
+                                    }}
+                                  >
+                                    {task.status === "completed" && <Icon d={ICONS.check} size={10} style={{ color: T.green }} />}
+                                  </div>
+                                  <span style={{
+                                    fontSize: 10.5,
+                                    color: task.status === "completed" ? T.dim : T.text,
+                                    textDecoration: task.status === "completed" ? "line-through" : "none",
+                                    flex: 1,
+                                  }}>
+                                    {task.title}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
                           <textarea
                             value={job.notes || ""}
                             onChange={(e) => updateNotes(job.id, e.target.value)}

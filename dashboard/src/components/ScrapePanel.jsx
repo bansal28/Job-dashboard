@@ -34,6 +34,8 @@ export default function ScrapePanel({ reload }) {
     { id: "greenhouse", label: "Greenhouse", ok: true },
     { id: "reed", label: "Reed", ok: config?.has_reed_key },
     { id: "adzuna", label: "Adzuna", ok: config?.has_adzuna_key },
+    { id: "gradcracker", label: "GradCracker", ok: true },
+    { id: "otta", label: "Otta", ok: true },
   ];
 
   return (

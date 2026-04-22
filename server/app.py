@@ -16,7 +16,8 @@ if SCRAPERS_DIR not in sys.path: sys.path.insert(0, SCRAPERS_DIR)
 
 from database import (init_db, insert_jobs, get_jobs, update_job, add_manual_job,
     delete_job, get_column_values, get_stats, get_analytics, log_scrape, finish_scrape,
-    get_last_scrape, recategorize_all)
+    get_last_scrape, recategorize_all,
+    add_task, get_tasks, update_task, complete_task_by_company, get_tasks_summary)
 from categorizer import enrich_job
 from apply_engine import generate_application
 from match_engine import score_all_jobs, get_score_breakdown, reload_profile
@@ -26,7 +27,6 @@ async def lifespan(app: FastAPI):
     init_db()
     print(f"[API] Server dir: {SERVER_DIR}")
     print(f"[API] Scrapers dir: {SCRAPERS_DIR}")
-    print("[API] Database ready")
     yield
 
 app = FastAPI(title="Job Hunter API", lifespan=lifespan)
@@ -68,19 +68,36 @@ def start_scrape(req: ScrapeRequest):
             if "greenhouse" in req.sources:
                 scrape_state["progress"] = "Scraping Greenhouse..."
                 from greenhouse_scraper import scrape_greenhouse
-                jobs = [enrich_job(j) for j in scrape_greenhouse(GREENHOUSE_BOARDS)]
+                raw = scrape_greenhouse(GREENHOUSE_BOARDS)
+                jobs = [enrich_job(j) for j in raw]
                 f, n = insert_jobs(jobs); total_found += f; total_new += n
 
             if "reed" in req.sources:
                 scrape_state["progress"] = "Scraping Reed..."
                 from reed_scraper import scrape_reed
-                jobs = [enrich_job(j) for j in scrape_reed(REED_API_KEY, SEARCH_QUERIES, LOCATIONS, MAX_RESULTS_PER_QUERY)]
+                raw = scrape_reed(REED_API_KEY, SEARCH_QUERIES, LOCATIONS, MAX_RESULTS_PER_QUERY)
+                jobs = [enrich_job(j) for j in raw]
                 f, n = insert_jobs(jobs); total_found += f; total_new += n
 
             if "adzuna" in req.sources:
                 scrape_state["progress"] = "Scraping Adzuna..."
                 from adzuna_scraper import scrape_adzuna
-                jobs = [enrich_job(j) for j in scrape_adzuna(ADZUNA_APP_ID, ADZUNA_APP_KEY, SEARCH_QUERIES, LOCATIONS, MAX_RESULTS_PER_QUERY)]
+                raw = scrape_adzuna(ADZUNA_APP_ID, ADZUNA_APP_KEY, SEARCH_QUERIES, LOCATIONS, MAX_RESULTS_PER_QUERY)
+                jobs = [enrich_job(j) for j in raw]
+                f, n = insert_jobs(jobs); total_found += f; total_new += n
+
+            if "gradcracker" in req.sources:
+                scrape_state["progress"] = "Scraping GradCracker..."
+                from gradcracker_scraper import scrape_gradcracker
+                raw = scrape_gradcracker()
+                jobs = [enrich_job(j) for j in raw]
+                f, n = insert_jobs(jobs); total_found += f; total_new += n
+
+            if "otta" in req.sources:
+                scrape_state["progress"] = "Scraping Otta / WTTJ..."
+                from otta_scraper import scrape_otta
+                raw = scrape_otta()
+                jobs = [enrich_job(j) for j in raw]
                 f, n = insert_jobs(jobs); total_found += f; total_new += n
 
             finish_scrape(log_id, total_found, total_new, "done")
@@ -107,13 +124,23 @@ def list_jobs(status: str = None, source: str = None, is_uk: str = None, categor
 
 @app.get("/api/picks")
 def smart_picks():
-    """Top 10 jobs to apply to today. Ranked by: match + freshness + urgency."""
+    """
+    Smart Picks: top 10 jobs you should apply to TODAY.
+    Ranked by: match score + freshness + not yet applied.
+    """
+    from datetime import datetime, timedelta
     jobs = get_jobs()
     score_all_jobs(jobs)
+
+    # Only new/saved jobs (not already applied)
     candidates = [j for j in jobs if j.get("status") in ("New", "Saved")]
+
+    # Score: match_score (0-100) + freshness bonus (0-20) + UK bonus (0-10)
     now = datetime.now()
     for j in candidates:
         score = j.get("match_score", 0)
+
+        # Freshness: posted in last 7 days = +20, last 14 = +10, else 0
         try:
             posted = datetime.strptime(j.get("date_posted", ""), "%Y-%m-%d")
             days_old = (now - posted).days
@@ -121,15 +148,28 @@ def smart_picks():
             elif days_old <= 7: score += 15
             elif days_old <= 14: score += 10
         except: pass
+
+        # UK/Remote bonus
         if j.get("is_uk") == "1": score += 5
+
+        # Has deadline soon = urgency bonus
         try:
             dl = datetime.strptime(j.get("deadline", ""), "%Y-%m-%d")
             days_left = (dl - now).days
             if 0 <= days_left <= 7: score += 10
         except: pass
+
         j["pick_score"] = score
+
+    # Sort by pick_score, take top 10
     candidates.sort(key=lambda j: j.get("pick_score", 0), reverse=True)
-    return {"picks": candidates[:10], "total_candidates": len(candidates), "generated_at": now.isoformat()}
+    top = candidates[:10]
+
+    return {
+        "picks": top,
+        "total_candidates": len(candidates),
+        "generated_at": now.isoformat(),
+    }
 
 @app.patch("/api/jobs/{job_id}")
 def patch_job(job_id: str, updates: JobUpdate):
@@ -153,18 +193,16 @@ def remove_job(job_id: str):
 # ── Match Score ──
 @app.get("/api/match/{job_id}")
 def match_breakdown(job_id: str):
+    """Get detailed match score breakdown for a job."""
     jobs = get_jobs()
     job = next((j for j in jobs if j["id"] == job_id), None)
-    if not job: raise HTTPException(404, "Job not found")
+    if not job:
+        raise HTTPException(404, "Job not found")
     return get_score_breakdown(job)
-
-@app.post("/api/match/batch")
-def batch_score(body: list[dict]):
-    score_all_jobs(body)
-    return [{"id": j.get("id", ""), "match_score": j.get("match_score", 0)} for j in body]
 
 @app.post("/api/match/reload")
 def reload_match_profile():
+    """Reload the candidate profile (after resume update)."""
     profile = reload_profile()
     return {
         "skills_count": len(profile["skills"]),
@@ -176,8 +214,10 @@ def reload_match_profile():
 # ── Deadline tracking ──
 @app.patch("/api/jobs/{job_id}/deadline")
 def set_deadline(job_id: str, body: dict):
+    """Set application deadline for a job."""
     deadline = body.get("deadline", "")
-    if not update_job(job_id, {"deadline": deadline}): raise HTTPException(404, "Not found")
+    if not update_job(job_id, {"deadline": deadline}):
+        raise HTTPException(404, "Not found")
     return {"ok": True}
 
 # ── Filters ──
@@ -192,12 +232,15 @@ def stats():
 
 @app.get("/api/analytics")
 def analytics():
+    """Full analytics data for the analytics dashboard."""
     return get_analytics()
 
 @app.get("/api/deadlines/upcoming")
 def upcoming_deadlines():
+    """Get jobs with deadlines in the next 7 days — only for saved/applied/interview jobs."""
     data = get_analytics()
     deadlines = data.get("deadlines", [])
+    # Only show deadlines for jobs the user cares about
     active_statuses = {"Saved", "Applied", "Interview"}
     deadlines = [d for d in deadlines if d.get("status") in active_statuses]
     today = datetime.now().strftime("%Y-%m-%d")
@@ -214,54 +257,103 @@ def get_config():
                 "has_reed_key": bool(REED_API_KEY), "has_adzuna_key": bool(ADZUNA_APP_ID)}
     except: return {"queries":[],"locations":[],"greenhouse_boards":[],"has_reed_key":False,"has_adzuna_key":False}
 
+# ── Recategorize existing jobs ──
 @app.post("/api/recategorize")
 def recategorize():
-    return {"recategorized": recategorize_all()}
+    count = recategorize_all()
+    return {"recategorized": count}
+
+# ── Tasks (Assignments, Coding Challenges) ──
+@app.get("/api/tasks")
+def list_tasks(status: str = None):
+    """Get all tasks, optionally filtered by status (pending/completed)."""
+    return get_tasks(status=status)
+
+@app.get("/api/tasks/summary")
+def tasks_summary():
+    """Get task counts: pending, completed, by company."""
+    return get_tasks_summary()
+
+@app.post("/api/tasks/{task_id}/complete")
+def complete_task(task_id: int):
+    """Manually mark a task as completed."""
+    now = datetime.now().isoformat()
+    if not update_task(task_id, {"status": "completed", "completed_at": now}):
+        raise HTTPException(404, "Task not found")
+    return {"ok": True}
+
+@app.post("/api/tasks/{task_id}/reopen")
+def reopen_task(task_id: int):
+    """Mark a completed task as pending again."""
+    if not update_task(task_id, {"status": "pending", "completed_at": ""}):
+        raise HTTPException(404, "Task not found")
+    return {"ok": True}
 
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
+# ── Batch Match Scoring (for CSV jobs) ──
+@app.post("/api/match/batch")
+def batch_score(body: list[dict]):
+    """Score a list of arbitrary jobs (not in DB). Used by CSV upload."""
+    score_all_jobs(body)
+    # Return just id->score mapping to keep response small
+    return [{"id": j.get("id", ""), "match_score": j.get("match_score", 0)} for j in body]
+
 # ── Smart Apply ──
-apply_state = {}
+apply_state = {}  # key -> {status, result}
 
 @app.post("/api/apply/{job_id}")
 def start_apply(job_id: str):
+    """Generate tailored resume + cover letter for a job in the DB."""
     if job_id in apply_state and apply_state[job_id].get("status") == "generating":
         return {"message": "Already generating", "status": "generating"}
+
+    # Fetch job from DB
     jobs = get_jobs()
     job = next((j for j in jobs if j["id"] == job_id), None)
-    if not job: raise HTTPException(404, "Job not found")
+    if not job:
+        raise HTTPException(404, "Job not found")
+
     return _run_apply(job_id, job)
 
 @app.post("/api/apply-direct")
 def start_apply_direct(job: dict):
+    """Generate tailored resume + cover letter for an arbitrary job (CSV upload etc)."""
     key = job.get("id", f"direct_{hash(job.get('title',''))}")
     if key in apply_state and apply_state[key].get("status") == "generating":
         return {"message": "Already generating", "status": "generating", "key": key}
     return _run_apply(key, job)
 
 def _run_apply(key: str, job: dict):
+    """Shared apply logic for both DB and direct jobs."""
     try:
         from config import GROQ_API_KEY
         api_key = GROQ_API_KEY
     except (ImportError, AttributeError):
         api_key = os.environ.get("GROQ_API_KEY", "")
+
     if not api_key:
         raise HTTPException(400, "No GROQ_API_KEY configured. Add it to scrapers/config.py")
+
     apply_state[key] = {"status": "generating", "result": None}
+
     def run():
         try:
             result = generate_application(job, api_key)
             apply_state[key] = {"status": "done", "result": result}
         except Exception as e:
             apply_state[key] = {"status": "error", "result": {"error": str(e)}}
+
     threading.Thread(target=run, daemon=True).start()
     return {"message": "Generating...", "status": "generating", "key": key}
 
 @app.get("/api/apply/{job_id}")
 def get_apply_result(job_id: str):
-    if job_id not in apply_state: return {"status": "not_started"}
+    """Check status / get result of application generation."""
+    if job_id not in apply_state:
+        return {"status": "not_started"}
     return apply_state[job_id]
 
 # ── Gmail Tracker + Pipeline Sync ──
@@ -269,13 +361,18 @@ email_scan_state = {"running": False, "result": None, "error": None}
 
 @app.post("/api/emails/scan")
 def scan_emails(days: int = 30):
-    if email_scan_state["running"]: return {"status": "running"}
+    """Scan Gmail, classify emails, and cross-reference with job pipeline."""
+    if email_scan_state["running"]:
+        return {"status": "running"}
+
     try:
         from config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD, GROQ_API_KEY
     except (ImportError, AttributeError):
         raise HTTPException(400, "Gmail credentials not configured in scrapers/config.py")
+
     if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
         raise HTTPException(400, "GMAIL_ADDRESS and GMAIL_APP_PASSWORD required in scrapers/config.py")
+
     from gmail_tracker import fetch_emails, classify_emails_batch
 
     def run():
@@ -284,100 +381,237 @@ def scan_emails(days: int = 30):
         try:
             emails = fetch_emails(GMAIL_ADDRESS, GMAIL_APP_PASSWORD, days=days)
             print(f"[Gmail] Fetched {len(emails)} emails from last {days} days")
+
             if emails and GROQ_API_KEY:
                 classified = classify_emails_batch(emails, GROQ_API_KEY)
                 job_emails = [e for e in classified if e.get("is_job_related")]
                 print(f"[Gmail] {len(job_emails)} job-related out of {len(classified)} total")
+
+                # Cross-reference with pipeline
                 all_jobs = get_jobs()
                 company_map = _build_company_map(all_jobs)
                 company_timeline = _build_company_timeline(job_emails, company_map)
+
+                # Auto-sync statuses
                 synced = _auto_sync_statuses(job_emails, company_map)
+
+                # Auto-create/complete tasks from emails
+                tasks_created, tasks_completed = _process_tasks_from_emails(job_emails, company_map)
+
                 email_scan_state["result"] = {
-                    "total_scanned": len(emails), "job_related": len(job_emails),
-                    "emails": job_emails, "company_timeline": company_timeline,
-                    "synced_count": synced, "scanned_at": datetime.now().isoformat(),
+                    "total_scanned": len(emails),
+                    "job_related": len(job_emails),
+                    "emails": job_emails,
+                    "company_timeline": company_timeline,
+                    "synced_count": synced,
+                    "tasks_created": tasks_created,
+                    "tasks_completed": tasks_completed,
+                    "scanned_at": datetime.now().isoformat(),
                 }
             else:
                 email_scan_state["result"] = {
-                    "total_scanned": len(emails), "job_related": 0, "emails": [],
-                    "company_timeline": {}, "synced_count": 0, "scanned_at": datetime.now().isoformat(),
+                    "total_scanned": len(emails),
+                    "job_related": 0, "emails": [],
+                    "company_timeline": {},
+                    "synced_count": 0,
+                    "scanned_at": datetime.now().isoformat(),
                 }
         except Exception as e:
             print(f"[Gmail] Error: {e}")
             email_scan_state["error"] = str(e)
         finally:
             email_scan_state["running"] = False
+
     threading.Thread(target=run, daemon=True).start()
     return {"status": "started"}
 
-def _build_company_map(jobs):
+
+def _build_company_map(jobs: list[dict]) -> dict:
+    """Map company names (lowercase) to job records."""
     cmap = {}
     for j in jobs:
         name = (j.get("company", "") or "").lower().strip()
-        if name: cmap.setdefault(name, []).append(j)
+        if name:
+            if name not in cmap:
+                cmap[name] = []
+            cmap[name].append(j)
     return cmap
 
-def _build_company_timeline(emails, company_map):
+
+def _build_company_timeline(emails: list[dict], company_map: dict) -> dict:
+    """
+    Build per-company timeline: group emails by company,
+    cross-reference with pipeline jobs.
+    """
     companies = {}
+
     for email in emails:
         company = (email.get("company", "") or "").strip()
-        if not company: continue
+        if not company:
+            continue
+
         key = company.lower()
         if key not in companies:
+            # Find matching jobs
             matched_jobs = []
             for cname, jobs in company_map.items():
-                if _fuzzy_match(key, cname): matched_jobs.extend(jobs)
+                if _fuzzy_match(key, cname):
+                    matched_jobs.extend(jobs)
+
             companies[key] = {
-                "name": company, "emails": [],
+                "name": company,
+                "emails": [],
                 "jobs": [{"id": j["id"], "title": j["title"], "status": j["status"]} for j in matched_jobs],
-                "latest_category": None, "email_count": 0,
+                "latest_category": None,
+                "email_count": 0,
             }
+
         companies[key]["emails"].append({
-            "subject": email.get("subject", ""), "category": email.get("category", ""),
-            "date": email.get("date", ""), "summary": email.get("ai_summary", ""),
+            "subject": email.get("subject", ""),
+            "category": email.get("category", ""),
+            "date": email.get("date", ""),
+            "summary": email.get("ai_summary", ""),
             "sender": email.get("sender_name", ""),
         })
         companies[key]["email_count"] += 1
         companies[key]["latest_category"] = email.get("category", "")
+
+    # Sort emails by date within each company
     for c in companies.values():
         c["emails"].sort(key=lambda e: e.get("date", ""), reverse=True)
+
     return companies
 
-def _fuzzy_match(a, b):
+
+def _fuzzy_match(a: str, b: str) -> bool:
+    """Simple fuzzy match — checks if company names are similar."""
     a, b = a.lower().strip(), b.lower().strip()
-    if a == b or a in b or b in a: return True
+    if a == b: return True
+    if a in b or b in a: return True
+    # Remove common suffixes
     for suffix in [" ltd", " limited", " inc", " plc", " corp", " group", " uk", " solutions", " recruitment", " consulting"]:
         a = a.replace(suffix, "").strip()
         b = b.replace(suffix, "").strip()
-    return a == b or a in b or b in a
+    if a == b: return True
+    if a in b or b in a: return True
+    return False
 
-def _auto_sync_statuses(emails, company_map):
+
+def _auto_sync_statuses(emails: list[dict], company_map: dict) -> int:
+    """
+    Auto-update job statuses based on email classifications.
+    e.g., rejection email → mark job as Rejected.
+    """
     synced = 0
-    mapping = {"interview": "Interview", "offer": "Offer", "rejection": "Rejected",
-               "assignment": "Interview", "acknowledgement": "Applied"}
-    priority = {"New": 0, "Saved": 1, "Applied": 2, "Interview": 3, "Offer": 4, "Rejected": -1}
+    status_mapping = {
+        "interview": "Interview",
+        "offer": "Offer",
+        "rejection": "Rejected",
+        "assignment": "Interview",  # coding challenge = interview stage
+        "acknowledgement": "Applied",
+    }
+
     for email in emails:
         company = (email.get("company", "") or "").lower().strip()
-        new_status = mapping.get(email.get("category", ""))
-        if not company or not new_status: continue
+        category = email.get("category", "")
+        new_status = status_mapping.get(category)
+
+        if not company or not new_status:
+            continue
+
+        # Find matching jobs
         for cname, jobs in company_map.items():
             if _fuzzy_match(company, cname):
                 for job in jobs:
-                    cur_p = priority.get(job.get("status", "New"), 0)
+                    current = job.get("status", "New")
+                    # Only upgrade status, never downgrade
+                    # Priority: New < Applied < Interview < Offer
+                    # Rejected is special — always apply
+                    priority = {"New": 0, "Saved": 1, "Applied": 2, "Interview": 3, "Offer": 4, "Rejected": -1}
+                    cur_p = priority.get(current, 0)
                     new_p = priority.get(new_status, 0)
+
                     if new_status == "Rejected" or new_p > cur_p:
                         update_job(job["id"], {"status": new_status})
                         synced += 1
+
     return synced
+
+
+def _process_tasks_from_emails(emails: list[dict], company_map: dict) -> tuple[int, int]:
+    """
+    Auto-create tasks from assignment emails, auto-complete from completion emails.
+    Returns (tasks_created, tasks_completed).
+    """
+    created = 0
+    completed = 0
+
+    # Keywords that indicate a task/assignment
+    assignment_keywords = ["assignment", "coding challenge", "technical test", "take-home",
+                          "coding test", "assessment", "online test", "hackerrank",
+                          "codility", "codesignal", "complete the", "please complete"]
+    # Keywords that indicate task completion/submission confirmation
+    completion_keywords = ["submission received", "submission confirmed", "thank you for completing",
+                          "received your submission", "test completed", "assessment completed",
+                          "results of your", "thank you for submitting", "successfully completed",
+                          "we have received your"]
+
+    for email in emails:
+        company = (email.get("company", "") or "").strip()
+        category = email.get("category", "")
+        subject = (email.get("subject", "") or "").lower()
+        summary = (email.get("ai_summary", "") or "").lower()
+        text = f"{subject} {summary}"
+
+        if not company:
+            continue
+
+        # Find matching job_id
+        job_id = ""
+        for cname, jobs in company_map.items():
+            if _fuzzy_match(company.lower(), cname) and jobs:
+                job_id = jobs[0]["id"]
+                break
+
+        # Check for assignment / new task
+        if category == "assignment" or any(kw in text for kw in assignment_keywords):
+            task_id = add_task({
+                "job_id": job_id,
+                "company": company,
+                "task_type": "assignment",
+                "title": email.get("subject", "Assignment"),
+                "description": email.get("ai_summary", ""),
+                "source_email_subject": email.get("subject", ""),
+            })
+            if task_id:
+                created += 1
+
+        # Check for completion confirmation
+        if any(kw in text for kw in completion_keywords):
+            count = complete_task_by_company(company)
+            completed += count
+
+    print(f"[Tasks] Created {created} tasks, completed {completed}")
+    return created, completed
+
 
 @app.get("/api/emails/status")
 def email_status():
-    return {"running": email_scan_state["running"], "result": email_scan_state["result"], "error": email_scan_state["error"]}
+    """Check email scan status and get results."""
+    return {
+        "running": email_scan_state["running"],
+        "result": email_scan_state["result"],
+        "error": email_scan_state["error"],
+    }
 
 @app.get("/api/emails/config")
 def email_config():
+    """Check if Gmail is configured."""
     try:
         from config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD
-        return {"configured": bool(GMAIL_ADDRESS and GMAIL_APP_PASSWORD),
-                "email": GMAIL_ADDRESS[:3] + "***" if GMAIL_ADDRESS else ""}
-    except: return {"configured": False, "email": ""}
+        return {
+            "configured": bool(GMAIL_ADDRESS and GMAIL_APP_PASSWORD),
+            "email": GMAIL_ADDRESS[:3] + "***" if GMAIL_ADDRESS else "",
+        }
+    except:
+        return {"configured": False, "email": ""}
