@@ -46,15 +46,6 @@ export default function EmailTrackerView() {
     if (s) setTaskSummary(s);
   }, []);
 
-  useEffect(() => {
-    api.get("/api/emails/config").then((c) => { if (c) setConfig(c); });
-    api.get("/api/emails/status").then((s) => {
-      if (s && s.result) setResult(s.result);
-      if (s && s.running) { setScanning(true); startPolling(); }
-    });
-    loadTasks();
-  }, [loadTasks]);
-
   const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
@@ -70,6 +61,15 @@ export default function EmailTrackerView() {
       }
     }, 2000);
   }, [loadTasks]);
+
+  useEffect(() => {
+    api.get("/api/emails/config").then((c) => { if (c) setConfig(c); });
+    api.get("/api/emails/status").then((s) => {
+      if (s && s.result) setResult(s.result);
+      if (s && s.running) { setScanning(true); startPolling(); }
+    });
+    loadTasks();
+  }, [loadTasks, startPolling]);
 
   const handleScan = async () => {
     setScanning(true); setError(null);

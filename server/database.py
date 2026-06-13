@@ -104,6 +104,7 @@ def _migrate(db):
         "city": "TEXT DEFAULT ''",
         "is_uk": "TEXT DEFAULT '0'",
         "deadline": "TEXT DEFAULT ''",
+        "follow_up_date": "TEXT DEFAULT ''",
         "tier": "TEXT DEFAULT ''",
         "visa_status": "TEXT DEFAULT ''",
         "company_tier": "TEXT DEFAULT ''",
@@ -175,7 +176,7 @@ def get_jobs(status=None, source=None, is_uk=None, category=None, city=None):
 
 
 def update_job(job_id: str, updates: dict) -> bool:
-    allowed = {"status", "notes", "category", "city", "is_uk", "job_type", "deadline"}
+    allowed = {"status", "notes", "category", "city", "is_uk", "job_type", "deadline", "follow_up_date"}
     fields = {k: v for k, v in updates.items() if k in allowed}
     if not fields:
         return False
@@ -328,6 +329,13 @@ def get_analytics() -> dict:
             ORDER BY deadline ASC
         """).fetchall()
         result["deadlines"] = [dict(r) for r in deadline_rows]
+
+        follow_up_rows = db.execute("""
+            SELECT id, title, company, follow_up_date, status FROM jobs
+            WHERE follow_up_date != '' AND follow_up_date IS NOT NULL
+            ORDER BY follow_up_date ASC
+        """).fetchall()
+        result["follow_ups"] = [dict(r) for r in follow_up_rows]
 
         # ─── Job type breakdown ───
         type_rows = db.execute("""

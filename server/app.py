@@ -40,6 +40,7 @@ class JobUpdate(BaseModel):
     status: str | None = None
     notes: str | None = None
     deadline: str | None = None
+    follow_up_date: str | None = None
 
 class ManualJob(BaseModel):
     title: str
@@ -237,17 +238,26 @@ def analytics():
 
 @app.get("/api/deadlines/upcoming")
 def upcoming_deadlines():
-    """Get jobs with deadlines in the next 7 days — only for saved/applied/interview jobs."""
+    """Get jobs with deadlines and follow-ups in the next 7 days."""
     data = get_analytics()
     deadlines = data.get("deadlines", [])
+    follow_ups = data.get("follow_ups", [])
     # Only show deadlines for jobs the user cares about
     active_statuses = {"Saved", "Applied", "Interview"}
     deadlines = [d for d in deadlines if d.get("status") in active_statuses]
+    follow_ups = [f for f in follow_ups if f.get("status") in active_statuses]
     today = datetime.now().strftime("%Y-%m-%d")
     week_later = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
     upcoming = [d for d in deadlines if today <= d.get("deadline", "") <= week_later]
     overdue = [d for d in deadlines if d.get("deadline", "") < today]
-    return {"upcoming": upcoming[:20], "overdue": overdue[:20]}
+    follow_up_due = [f for f in follow_ups if today <= f.get("follow_up_date", "") <= week_later]
+    follow_up_overdue = [f for f in follow_ups if f.get("follow_up_date", "") < today]
+    return {
+        "upcoming": upcoming[:20],
+        "overdue": overdue[:20],
+        "follow_up_due": follow_up_due[:20],
+        "follow_up_overdue": follow_up_overdue[:20],
+    }
 
 @app.get("/api/config")
 def get_config():

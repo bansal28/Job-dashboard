@@ -68,6 +68,7 @@ Uses **Groq API (free tier)** with Llama 3.3 70B. ~10 seconds per application.
 ### 6. Application Pipeline (Kanban)
 Track jobs through stages: **Saved → Applied → Interview → Offer**
 - Notes per job
+- Follow-up dates per job, with overdue / due-this-week reminders
 - Collapsed rejected section with restore
 - Status syncs automatically from email scanning
 
@@ -102,6 +103,11 @@ Connects to Gmail via IMAP, scans emails, classifies with AI:
 - Manual deadline picker on any job
 - Color-coded: red (today/overdue), yellow (3 days), cyan (this week)
 - Sortable deadline column in the table
+
+### 11. Follow-Up Reminders
+- Add a follow-up date to saved/applied/interview jobs
+- See overdue and due-this-week follow-ups in Discover and Pipeline
+- Pipeline cards show compact follow-up badges so pending outreach is hard to miss
 
 ---
 

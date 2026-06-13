@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { T, Icon, ICONS, fontMono, fontBody, buttonStyle } from "../theme.jsx";
+import { T, Icon, ICONS, fontBody, buttonStyle } from "../theme.jsx";
 import ColumnFilter from "./ColumnFilter";
 import JobRow from "./JobRow";
 

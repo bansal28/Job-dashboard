@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import api from "../api";
-import { T, Icon, ICONS, fontMono, fontHeading, fontBody, buttonStyle } from "../theme.jsx";
+import { T, Icon, ICONS, fontMono, fontHeading, fontBody } from "../theme.jsx";
 
 /**
  * Smart Picks — "Apply to these today" curated recommendations.

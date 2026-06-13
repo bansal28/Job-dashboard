@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import api from "../api";
-import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme.jsx";
+import { T, Icon, ICONS, fontMono, buttonStyle } from "../theme.jsx";
 
 /**
  * ApplyPanel — shown inside an expanded job row when "Apply" is clicked.
@@ -8,7 +8,7 @@ import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme.jsx
  *   - DB mode: jobId is set, calls /api/apply/{jobId}
  *   - Direct mode: jobData is set (CSV jobs), calls /api/apply-direct
  */
-export default function ApplyPanel({ jobId, jobTitle, company, jobData = null }) {
+export default function ApplyPanel({ jobId, company, jobData = null }) {
   const [status, setStatus] = useState("idle"); // idle | generating | done | error
   const [result, setResult] = useState(null);
   const [activeTab, setActiveTab] = useState("jd"); // jd | keywords | resume | cover
@@ -16,22 +16,6 @@ export default function ApplyPanel({ jobId, jobTitle, company, jobData = null })
   const pollRef = useRef(null);
 
   const isDirect = !!jobData;
-
-  // Check if we already have a result
-  useEffect(() => {
-    const checkExisting = async () => {
-      const data = await api.get(`/api/apply/${applyKey}`);
-      if (data && data.status === "done" && data.result) {
-        setResult(data.result);
-        setStatus("done");
-      } else if (data && data.status === "generating") {
-        setStatus("generating");
-        startPolling();
-      }
-    };
-    checkExisting();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [applyKey]);
 
   const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -51,6 +35,22 @@ export default function ApplyPanel({ jobId, jobTitle, company, jobData = null })
       }
     }, 2000);
   }, [applyKey]);
+
+  // Check if we already have a result
+  useEffect(() => {
+    const checkExisting = async () => {
+      const data = await api.get(`/api/apply/${applyKey}`);
+      if (data && data.status === "done" && data.result) {
+        setResult(data.result);
+        setStatus("done");
+      } else if (data && data.status === "generating") {
+        setStatus("generating");
+        startPolling();
+      }
+    };
+    checkExisting();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [applyKey, startPolling]);
 
   const handleGenerate = async () => {
     setStatus("generating");
@@ -168,7 +168,7 @@ export default function ApplyPanel({ jobId, jobTitle, company, jobData = null })
 
   // Check if keywords actually has content
   const hasKeywords = Object.entries(keywords).some(
-    ([key, val]) => Array.isArray(val) && val.length > 0
+    ([, val]) => Array.isArray(val) && val.length > 0
   );
 
   const tabs = [

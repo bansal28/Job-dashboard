@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import api from "../api";
-import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle, parseCSV, exportCSV } from "../theme.jsx";
+import { T, Icon, ICONS, fontHeading, buttonStyle, parseCSV, exportCSV } from "../theme.jsx";
 import JobTable from "../components/JobTable";
 
 /**

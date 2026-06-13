@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import api from "../api";
-import { T, STATUS_MAP, PIPELINE_COLS, Icon, ICONS, fontMono, fontHeading, fontBody, buttonStyle } from "../theme.jsx";
+import { T, STATUS_MAP, PIPELINE_COLS, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme.jsx";
+import DeadlineBanner from "../components/DeadlineBanner";
 
 export default function PipelineView({ jobs, updateStatus, updateNotes }) {
   const [expandedId, setExpandedId] = useState(null);
@@ -14,7 +15,9 @@ export default function PipelineView({ jobs, updateStatus, updateNotes }) {
     if (t) setTasks(t);
   }, []);
 
-  useEffect(() => { loadTasks(); }, [loadTasks]);
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
 
   // Group tasks by company (lowercase) for matching
   const tasksByCompany = {};
@@ -68,6 +71,9 @@ export default function PipelineView({ jobs, updateStatus, updateNotes }) {
         )}
       </div>
       <p style={{ fontSize: 11, color: T.dim, marginBottom: 20 }}>Track your applications through each stage</p>
+      <div style={{ margin: "0 -24px 8px" }}>
+        <DeadlineBanner />
+      </div>
 
       {/* Kanban columns */}
       <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8, minHeight: "calc(100vh - 200px)" }}>
@@ -92,6 +98,7 @@ export default function PipelineView({ jobs, updateStatus, updateNotes }) {
                   const jobTasks = getJobTasks(job);
                   const pendingTasks = jobTasks.filter((t) => t.status === "pending");
                   const completedTasks = jobTasks.filter((t) => t.status === "completed");
+                  const followUp = getFollowUpInfo(job.follow_up_date);
 
                   return (
                     <div
@@ -110,9 +117,17 @@ export default function PipelineView({ jobs, updateStatus, updateNotes }) {
                         {job.category ? ` \u2022 ${job.category}` : ""}
                       </div>
 
-                      {/* Task badge (always visible if tasks exist) */}
-                      {jobTasks.length > 0 && (
+                      {/* Follow-up and task badges */}
+                      {(job.follow_up_date || jobTasks.length > 0) && (
                         <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                          {job.follow_up_date && (
+                            <span style={{
+                              fontSize: 9, color: followUp.color, background: followUp.bg,
+                              padding: "2px 8px", borderRadius: 4, fontWeight: 600,
+                            }}>
+                              ↩ {followUp.label}
+                            </span>
+                          )}
                           {pendingTasks.length > 0 && (
                             <span style={{
                               fontSize: 9, color: T.yellow, background: T.yellowBg,
@@ -256,4 +271,22 @@ export default function PipelineView({ jobs, updateStatus, updateNotes }) {
       )}
     </div>
   );
+}
+
+function getFollowUpInfo(followUpDate) {
+  if (!followUpDate) return { label: "", color: T.dim, bg: T.card };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const date = new Date(followUpDate);
+  date.setHours(0, 0, 0, 0);
+  const diff = Math.round((date - today) / 86400000);
+
+  if (diff < 0) return { label: `${Math.abs(diff)}d overdue`, color: T.red, bg: T.redBg };
+  if (diff === 0) return { label: "follow up today", color: T.yellow, bg: T.yellowBg };
+  if (diff === 1) return { label: "follow up tomorrow", color: T.yellow, bg: T.yellowBg };
+  if (diff <= 7) return { label: `follow up in ${diff}d`, color: T.cyan, bg: T.cyanBg };
+
+  const label = date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return { label, color: T.dim, bg: T.card };
 }

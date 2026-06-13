@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import api from "../api";
-import { T, Icon, ICONS, fontMono, fontHeading, buttonStyle } from "../theme.jsx";
+import { T, Icon, ICONS, fontHeading } from "../theme.jsx";
 
 /**
  * Analytics Dashboard.
@@ -45,7 +45,6 @@ export default function AnalyticsView() {
   const categories = data.categories || {};
   const appliedByCat = data.applied_by_category || {};
   const topCities = data.top_cities || {};
-  const appliedByCity = data.applied_by_city || {};
   const sources = data.sources || {};
   const topCompanies = data.top_companies || {};
   const jobTypes = data.job_types || {};

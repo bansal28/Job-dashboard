@@ -17,12 +17,12 @@ const DEFAULT_COLUMNS = [
 
 export default function JobRow({ job, isExpanded, onToggle, updateStatus, updateNotes, deleteJob, columns = DEFAULT_COLUMNS }) {
   const statusStyle = STATUS_MAP[job.status] || STATUS_MAP.New;
-  const isManual = job.source === "Manual";
   const categoryColor = CATEGORY_COLORS[job.category] || T.dim;
   const [showApply, setShowApply] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [breakdown, setBreakdown] = useState(null);
   const [deadline, setDeadline] = useState(job.deadline || "");
+  const [followUpDate, setFollowUpDate] = useState(job.follow_up_date || "");
 
   const score = job.match_score || 0;
   const scoreColor = score >= 75 ? T.green : score >= 50 ? T.yellow : score >= 30 ? T.dim : T.red;
@@ -30,6 +30,11 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
   const handleDeadlineChange = (val) => {
     setDeadline(val);
     api.patch(`/api/jobs/${job.id}`, { deadline: val });
+  };
+
+  const handleFollowUpChange = (val) => {
+    setFollowUpDate(val);
+    api.patch(`/api/jobs/${job.id}`, { follow_up_date: val });
   };
 
   const loadBreakdown = async () => {
@@ -40,6 +45,7 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
 
   // Deadline status
   const deadlineInfo = getDeadlineInfo(deadline);
+  const followUpInfo = getFollowUpInfo(followUpDate);
 
   const cellRenderers = {
     match_score: () => (
@@ -50,11 +56,18 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
     title: () => (
       <td key="title" style={{ padding: "10px 10px" }}>
         <div style={{ color: T.bright, fontWeight: 500, fontSize: 12 }}>{job.title}</div>
-        {deadline && (
-          <span style={{ fontSize: 9, color: deadlineInfo.color, marginTop: 2, display: "inline-block" }}>
-            ⏰ {deadlineInfo.label}
-          </span>
-        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+          {deadline && (
+            <span style={{ fontSize: 9, color: deadlineInfo.color, display: "inline-block" }}>
+              Deadline: {deadlineInfo.label}
+            </span>
+          )}
+          {followUpDate && (
+            <span style={{ fontSize: 9, color: followUpInfo.color, display: "inline-block" }}>
+              Follow up: {followUpInfo.label}
+            </span>
+          )}
+        </div>
       </td>
     ),
     company:     () => <td key="company" style={{ padding: "10px 10px", color: T.cyan, fontSize: 11.5 }}>{job.company}</td>,
@@ -186,7 +199,7 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                 </div>
               )}
 
-              {/* Notes + deadline row */}
+              {/* Notes + date controls */}
               <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
                 {/* Notes */}
                 {updateNotes && (
@@ -205,21 +218,20 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
 
                 {/* Deadline picker */}
                 {updateStatus && (
-                  <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
-                    <label style={{ fontSize: 9, color: T.dim, textTransform: "uppercase", display: "block", marginBottom: 3 }}>
-                      Deadline
-                    </label>
-                    <input
-                      type="date"
+                  <>
+                    <DateControl
+                      label="Deadline"
                       value={deadline}
-                      onChange={(e) => handleDeadlineChange(e.target.value)}
-                      style={{
-                        background: T.bg, border: `1px solid ${deadline ? deadlineInfo.borderColor : T.border}`,
-                        borderRadius: 6, padding: "6px 8px", color: T.text,
-                        fontSize: 11, fontFamily: fontMono, width: 130,
-                      }}
+                      onChange={handleDeadlineChange}
+                      borderColor={deadline ? deadlineInfo.borderColor : T.border}
                     />
-                  </div>
+                    <DateControl
+                      label="Follow up"
+                      value={followUpDate}
+                      onChange={handleFollowUpChange}
+                      borderColor={followUpDate ? followUpInfo.borderColor : T.border}
+                    />
+                  </>
                 )}
               </div>
 
@@ -299,6 +311,26 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
   );
 }
 
+function DateControl({ label, value, onChange, borderColor }) {
+  return (
+    <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+      <label style={{ fontSize: 9, color: T.dim, textTransform: "uppercase", display: "block", marginBottom: 3 }}>
+        {label}
+      </label>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          background: T.bg, border: `1px solid ${borderColor}`,
+          borderRadius: 6, padding: "6px 8px", color: T.text,
+          fontSize: 11, fontFamily: fontMono, width: 130,
+        }}
+      />
+    </div>
+  );
+}
+
 
 /* ─── Score Badge (shown in table cell) ─── */
 function ScoreBadge({ score, color }) {
@@ -366,5 +398,23 @@ function getDeadlineInfo(deadline) {
   if (diffDays <= 7) return { label: `${diffDays}d left`, color: T.cyan, borderColor: T.cyanDim };
 
   const dateStr = dl.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return { label: dateStr, color: T.dim, borderColor: T.border };
+}
+
+function getFollowUpInfo(followUpDate) {
+  if (!followUpDate) return { label: "", color: T.dim, borderColor: T.border };
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const date = new Date(followUpDate);
+  date.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((date - now) / 86400000);
+
+  if (diffDays < 0) return { label: `${Math.abs(diffDays)}d overdue`, color: T.red, borderColor: T.red };
+  if (diffDays === 0) return { label: "today", color: T.yellow, borderColor: T.yellow };
+  if (diffDays === 1) return { label: "tomorrow", color: T.yellow, borderColor: T.yellow };
+  if (diffDays <= 7) return { label: `${diffDays}d`, color: T.cyan, borderColor: T.cyanDim };
+
+  const dateStr = date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   return { label: dateStr, color: T.dim, borderColor: T.border };
 }
