@@ -1,7 +1,16 @@
-# Scrapers
-requests>=2.31.0
+# Scrapers / HTTP
+requests==2.34.2
 
 # Server
-fastapi>=0.104.0
-uvicorn>=0.24.0
-pydantic>=2.0.0
+fastapi==0.136.3
+uvicorn[standard]==0.49.0
+pydantic==2.13.4
+
+# Agentic RAG
+chromadb==1.5.9
+sentence-transformers==5.5.1
+langgraph==1.2.5
+langchain-groq==1.1.3
+
+# Tests
+pytest==9.1.0

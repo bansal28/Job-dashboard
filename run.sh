@@ -28,7 +28,7 @@ if [ "$1" = "--scrape" ]; then
 fi
 
 # Install server deps if needed
-pip install fastapi uvicorn --quiet --break-system-packages 2>/dev/null || pip install fastapi uvicorn --quiet
+pip install -r requirements.txt --quiet --break-system-packages 2>/dev/null || pip install -r requirements.txt --quiet
 
 # Initialize database
 python -c "import sys; sys.path.insert(0, 'server'); from database import init_db; init_db()" 2>/dev/null

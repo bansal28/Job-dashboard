@@ -73,6 +73,19 @@ MAX_RESULTS_PER_QUERY = 50
 # Get free key from https://console.groq.com/keys
 GROQ_API_KEY = ""
 
+# ─── RAG / AGENT SETTINGS (optional; env vars override these) ───────────────
+GROQ_MODEL = "llama-3.3-70b-versatile"
+JUDGE_MODEL = "llama-3.3-70b-versatile"
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+EMBEDDING_FALLBACK_MODEL = "all-MiniLM-L6-v2"
+VECTOR_STORE_PATH = "data/chroma"
+VECTOR_COLLECTION = "resume_chunks"
+RETRIEVAL_METHOD = "hybrid"
+RETRIEVAL_K = "6"
+RRF_K = "60"
+RRF_DENSE_WEIGHT = "1.0"
+RRF_SPARSE_WEIGHT = "1.0"
+
 # ─── GMAIL (Email Tracker) ─────────────────────────────────
 # Enable IMAP in Gmail settings, then generate App Password:
 # https://myaccount.google.com/apppasswords (requires 2FA)

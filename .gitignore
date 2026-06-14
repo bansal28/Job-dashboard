@@ -18,6 +18,7 @@ scrapers/config.py
 .DS_Store
 # Database
 data/jobs.db
+data/chroma/
 
 # Zip archives
 *.zip
