@@ -383,6 +383,19 @@ def get_apply_result(job_id: str):
         return {"status": "not_started"}
     return apply_state[job_id]
 
+# ── Agentic Apply ──
+@app.post("/agent/apply/{job_id}")
+@app.post("/api/agent/apply/{job_id}")
+def agent_apply(job_id: str):
+    """Run the LangGraph RAG agent for a grounded cover-letter draft."""
+    try:
+        from job_agent import run_apply_agent
+        return run_apply_agent(job_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
 # ── Gmail Tracker + Pipeline Sync ──
 email_scan_state = {"running": False, "result": None, "error": None}
 

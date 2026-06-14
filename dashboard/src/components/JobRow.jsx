@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { T, STATUS_MAP, ALL_STATUSES, CATEGORY_COLORS, Icon, ICONS, fontMono, buttonStyle, daysAgo } from "../theme.jsx";
 import ApplyPanel from "./ApplyPanel";
+import AgentApplyPanel from "./AgentApplyPanel";
 import api from "../api";
 
 /**
@@ -19,6 +20,7 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
   const statusStyle = STATUS_MAP[job.status] || STATUS_MAP.New;
   const categoryColor = CATEGORY_COLORS[job.category] || T.dim;
   const [showApply, setShowApply] = useState(false);
+  const [showAgentApply, setShowAgentApply] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [breakdown, setBreakdown] = useState(null);
   const [deadline, setDeadline] = useState(job.deadline || "");
@@ -328,11 +330,30 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                     <Icon d={ICONS.zap} size={11} /> {showApply ? "Hide" : "Smart Apply"}
                   </button>
                 )}
+
+                {updateStatus && (job.full_description || job.description_snippet || job.url) && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowAgentApply(!showAgentApply); }}
+                    style={{
+                      ...buttonStyle,
+                      background: showAgentApply ? T.purpleBg : T.card,
+                      color: showAgentApply ? T.purple : T.dim,
+                      borderColor: showAgentApply ? "#4c1d95" : T.border,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Icon d={ICONS.zap} size={11} /> {showAgentApply ? "Hide Agent" : "Agent Apply"}
+                  </button>
+                )}
               </div>
 
               {/* Apply Panel */}
               {showApply && (
                 <ApplyPanel jobId={job.id} jobTitle={job.title} company={job.company} jobData={!updateStatus ? job : null} />
+              )}
+
+              {showAgentApply && (
+                <AgentApplyPanel jobId={job.id} />
               )}
             </div>
           </td>
