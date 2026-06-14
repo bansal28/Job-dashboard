@@ -157,6 +157,16 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                     Match Breakdown
                   </div>
 
+                  <div style={{
+                    display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center",
+                    marginBottom: 12, fontSize: 10.5, color: T.dim,
+                  }}>
+                    <span style={{ color: T.cyan, background: T.cyanBg, border: `1px solid ${T.cyanDim}`, borderRadius: 4, padding: "3px 8px" }}>
+                      {String(breakdown.method || "hybrid").toUpperCase()} score: {breakdown.retrieval_score ?? breakdown.total_score}%
+                    </span>
+                    <span>Legacy heuristic: {breakdown.legacy_score}%</span>
+                  </div>
+
                   {/* Score bars */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
                     <ScoreBar label="Skills" score={breakdown.skills_score} weight="40%" />
@@ -196,6 +206,27 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                       </div>
                     )}
                   </div>
+
+                  {breakdown.evidence?.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 10, color: T.cyan, textTransform: "uppercase", marginBottom: 6 }}>
+                        Retrieved Resume Evidence
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {breakdown.evidence.slice(0, 4).map((item) => (
+                          <div key={item.id} style={{
+                            border: `1px solid ${T.border}`, borderRadius: 6, padding: "7px 9px",
+                            background: T.surface, color: T.text, fontSize: 10.5, lineHeight: 1.5,
+                          }}>
+                            <div style={{ color: T.dim, fontSize: 9.5, marginBottom: 3 }}>
+                              {item.section}{item.company ? ` / ${item.company}` : ""}{item.role ? ` / ${item.role}` : ""} · score {Math.round((item.score || 0) * 100) / 100}
+                            </div>
+                            {item.text}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

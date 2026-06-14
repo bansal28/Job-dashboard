@@ -13,6 +13,18 @@ Scoring breakdown:
 import re
 from pathlib import Path
 
+try:
+    from .hybrid_retriever import get_retriever, reload_retriever
+    from .settings import RETRIEVAL_METHOD
+except ImportError:  # pragma: no cover - supports FastAPI's top-level imports
+    try:
+        from hybrid_retriever import get_retriever, reload_retriever
+        from settings import RETRIEVAL_METHOD
+    except Exception:  # keeps legacy scoring available
+        get_retriever = None
+        reload_retriever = None
+        RETRIEVAL_METHOD = "hybrid"
+
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 RESUME_PATH = TEMPLATES_DIR / "resume_base.tex"
 
@@ -210,10 +222,32 @@ def reload_profile():
     """Force reload profile (after resume update)."""
     global _profile_cache
     _profile_cache = None
+    if reload_retriever:
+        try:
+            reload_retriever()
+        except Exception as exc:
+            print(f"[Match] Retriever reload skipped: {exc}")
     return get_profile()
 
 
 def score_job(job: dict) -> int:
+    """
+    Score a single job 0-100 using hybrid resume retrieval.
+
+    Falls back to the original heuristic scorer if retrieval is unavailable.
+    """
+    query = _job_query(job)
+    if get_retriever and query:
+        try:
+            score, _ = get_retriever().score_query(query, method=RETRIEVAL_METHOD)
+            if score > 0:
+                return score
+        except Exception as exc:
+            print(f"[Match] Hybrid scoring failed, using legacy score: {exc}")
+    return _legacy_score_job(job)
+
+
+def _legacy_score_job(job: dict) -> int:
     """
     Score a single job 0-100 based on profile match.
     Returns integer score.
@@ -398,8 +432,22 @@ def get_score_breakdown(job: dict) -> dict:
     overlap = profile["skills"] & jd_skills
     missing = jd_skills - profile["skills"]
 
+    retrieval_score = 0
+    retrieval_results = []
+    retrieval_error = ""
+    if get_retriever:
+        try:
+            retrieval_score, retrieval_results = get_retriever().score_query(_job_query(job), method=RETRIEVAL_METHOD)
+        except Exception as exc:
+            retrieval_error = str(exc)
+
     return {
-        "total_score": score_job(job),
+        "total_score": retrieval_score or _legacy_score_job(job),
+        "method": RETRIEVAL_METHOD,
+        "retrieval_score": retrieval_score,
+        "legacy_score": _legacy_score_job(job),
+        "retrieval_error": retrieval_error,
+        "evidence": [result.as_dict() for result in retrieval_results],
         "skills_score": round(_score_skills(text, profile)),
         "level_score": round(_score_experience_level(title, job_type, profile)),
         "domain_score": round(_score_domain(category, text, profile)),
@@ -412,3 +460,15 @@ def get_score_breakdown(job: dict) -> dict:
         "your_domains": sorted(profile["domains"]),
         "job_category": category,
     }
+
+
+def _job_query(job: dict) -> str:
+    parts = [
+        job.get("title", ""),
+        job.get("company", ""),
+        job.get("category", ""),
+        job.get("job_type", ""),
+        job.get("full_description", ""),
+        job.get("description_snippet", ""),
+    ]
+    return "\n".join(str(part) for part in parts if part)

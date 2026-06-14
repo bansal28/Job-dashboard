@@ -51,6 +51,11 @@ class ManualJob(BaseModel):
     salary: str = ""
     description_snippet: str = ""
 
+class RetrievalRequest(BaseModel):
+    query: str
+    k: int = 6
+    method: str = "hybrid"
+
 # ── Scraping ──
 @app.post("/api/scrape")
 def start_scrape(req: ScrapeRequest):
@@ -207,9 +212,21 @@ def reload_match_profile():
     profile = reload_profile()
     return {
         "skills_count": len(profile["skills"]),
-        "experience_years": profile["years"],
-        "education": profile["education"],
+        "experience_years": profile["years_experience"],
+        "education": profile["education_level"],
         "domains": sorted(profile["domains"]),
+    }
+
+@app.post("/api/retrieve")
+def retrieve_resume(body: RetrievalRequest):
+    """Retrieve resume evidence with dense, sparse, or hybrid retrieval."""
+    if body.method not in {"dense", "sparse", "hybrid"}:
+        raise HTTPException(400, "method must be one of: dense, sparse, hybrid")
+    from hybrid_retriever import retrieve
+    return {
+        "query": body.query,
+        "method": body.method,
+        "results": retrieve(body.query, k=body.k, method=body.method),
     }
 
 # ── Deadline tracking ──
