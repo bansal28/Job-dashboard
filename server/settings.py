@@ -55,3 +55,8 @@ RRF_DENSE_WEIGHT = float(get_setting("RRF_DENSE_WEIGHT", "1.0") or "1.0")
 RRF_SPARSE_WEIGHT = float(get_setting("RRF_SPARSE_WEIGHT", "1.0") or "1.0")
 
 RESUME_PATH = Path(get_setting("RESUME_PATH", str(TEMPLATES_DIR / "resume_base.tex")))
+
+SCRAPE_MIN_MATCH_SCORE = int(get_setting("SCRAPE_MIN_MATCH_SCORE", "50") or "50")
+SCRAPE_MAX_JOBS = int(get_setting("SCRAPE_MAX_JOBS", "250") or "250")
+DASHBOARD_MIN_MATCH_SCORE = int(get_setting("DASHBOARD_MIN_MATCH_SCORE", "50") or "50")
+DASHBOARD_MAX_NEW_JOBS = int(get_setting("DASHBOARD_MAX_NEW_JOBS", "250") or "250")

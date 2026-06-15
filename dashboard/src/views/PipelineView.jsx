@@ -8,7 +8,7 @@ export default function PipelineView({ jobs, updateStatus, updateNotes }) {
   const [showRejected, setShowRejected] = useState(false);
   const [tasks, setTasks] = useState([]);
   const rejectedJobs = jobs.filter((j) => j.status === "Rejected");
-  const nextStatusMap = { Saved: "Applied", Applied: "Interview", Interview: "Offer" };
+  const nextStatusMap = { Saved: "Approved", Approved: "Applied", Applied: "Interview", Interview: "Offer" };
 
   const loadTasks = useCallback(async () => {
     const t = await api.get("/api/tasks");

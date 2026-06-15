@@ -47,6 +47,7 @@ export const T = {
 export const STATUS_MAP = {
   New:       { color: T.blue,   bg: T.blueBg,   border: "rgba(108,180,255,0.25)" },
   Saved:     { color: T.cyan,   bg: T.cyanBg,   border: "rgba(99,220,255,0.25)" },
+  Approved:  { color: T.green,  bg: T.greenBg,  border: "rgba(72,224,160,0.25)" },
   Applied:   { color: T.yellow, bg: T.yellowBg, border: "rgba(255,200,87,0.25)" },
   Interview: { color: T.purple, bg: T.purpleBg, border: "rgba(180,140,255,0.25)" },
   Offer:     { color: T.green,  bg: T.greenBg,  border: "rgba(72,224,160,0.25)" },
@@ -54,7 +55,7 @@ export const STATUS_MAP = {
 };
 
 export const ALL_STATUSES = Object.keys(STATUS_MAP);
-export const PIPELINE_COLS = ["Saved", "Applied", "Interview", "Offer"];
+export const PIPELINE_COLS = ["Saved", "Approved", "Applied", "Interview", "Offer"];
 
 export const CATEGORY_COLORS = {
   "AI / ML": T.purple,

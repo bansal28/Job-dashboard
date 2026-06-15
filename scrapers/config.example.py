@@ -61,6 +61,14 @@ GREENHOUSE_BOARDS = [
     # Add extra board tokens here, e.g. "my-favourite-startup".
 ]
 
+# ─── INTAKE GATE ────────────────────────────────────────────
+# Scrapers can scan a large market, but only jobs above this score are inserted
+# into the review queue. Set SCRAPE_MAX_JOBS=0 if you deliberately want no cap.
+SCRAPE_MIN_MATCH_SCORE = "50"
+SCRAPE_MAX_JOBS = "250"
+DASHBOARD_MIN_MATCH_SCORE = "50"
+DASHBOARD_MAX_NEW_JOBS = "250"
+
 # ─── OUTPUT ─────────────────────────────────────────────────
 OUTPUT_DIR = "output"
 OUTPUT_CSV = "output/jobs.csv"

@@ -4,10 +4,11 @@ Job Hunter is a local-first application tracker that now combines scraping, Gmai
 
 ## What It Does
 
-- Scrapes jobs from Greenhouse by default, with Reed, Adzuna, Gradcracker, and Otta/WTTJ still available as optional sources.
+- Scans jobs from Greenhouse by default, then uses a score-based intake gate so only the best candidates enter the review queue.
 - Lets each local user upload their own resume profile, with a `.tex` source used for RAG and generation.
 - Scores jobs against the resume with hybrid retrieval: dense Chroma vectors plus a from-scratch TF-IDF sparse retriever fused by RRF.
 - Runs an apply agent that extracts JD requirements, retrieves resume evidence, drafts a cover letter, and returns exact cited resume chunks.
+- Builds application plans for approved jobs, including Greenhouse form metadata when publicly available.
 - Tracks application replies from Gmail and updates pipeline status.
 - Evaluates retrieval and generation faithfulness with `python -m evals.run`.
 
@@ -15,7 +16,8 @@ Job Hunter is a local-first application tracker that now combines scraping, Gmai
 
 ```mermaid
 flowchart TD
-    Scrapers[Job scrapers] --> DB[(SQLite jobs.db)]
+    Scrapers[Job scrapers] --> Intake[Intake gate]
+    Intake --> DB[(SQLite jobs.db)]
     Gmail[Gmail IMAP + LLM classifier] --> DB
     Profile[Uploaded profile resume] --> Chunker[Resume chunker]
     Resume[resume_base.tex fallback] --> Chunker
@@ -28,6 +30,7 @@ flowchart TD
     RRF --> FastAPI
     FastAPI --> React[React dashboard]
     FastAPI --> Agent[LangGraph apply agent]
+    FastAPI --> Plan[Application plan]
     Agent --> Tools[JD fetch, retrieval, scoring, Gmail status]
     Tools --> Agent
     Agent --> Guard[Grounding guard]
@@ -46,9 +49,11 @@ flowchart TD
 | Hybrid retrieval | `server/hybrid_retriever.py`, `server/tfidf_retriever.py`, `server/vector_store.py` |
 | Resume chunking | `server/resume_chunks.py` |
 | Legacy + hybrid match scoring | `server/match_engine.py` |
+| Scrape intake gate | `server/intake.py` |
 | LLM client | `server/llm_client.py` |
 | Smart Apply | `server/apply_engine.py` |
 | LangGraph apply agent | `server/job_agent.py`, `server/agent_tools.py`, `server/grounding.py` |
+| Application plan | `server/application_planner.py`, `dashboard/src/components/ApplicationPlanPanel.jsx` |
 | Gmail sync | `server/gmail_tracker.py` |
 | React dashboard | `dashboard/src/App.jsx`, `dashboard/src/components/JobRow.jsx`, `dashboard/src/components/AgentApplyPanel.jsx` |
 | Evals | `evals/` |
@@ -86,7 +91,11 @@ Greenhouse scraping uses the public Job Board API and does not need an API key f
 GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true
 ```
 
-`content=true` is important because it returns the full job description, departments, and offices in one response. The dashboard defaults to **AI / ML** roles; select more role categories before scraping to broaden results. Run Greenhouse-only from CLI with:
+`content=true` is important because it returns the full job description, departments, and offices in one response. The dashboard defaults to **AI / ML** roles; select more role categories before scraping to broaden results.
+
+The scraper may scan hundreds of company boards, but the intake gate scores those raw jobs and only inserts the highest-quality candidates. The default gate is `SCRAPE_MIN_MATCH_SCORE=50` and `SCRAPE_MAX_JOBS=250`; tune those in `scrapers/config.py` or through the dashboard scrape controls.
+
+Run Greenhouse-only from CLI with:
 
 ```bash
 cd scrapers
@@ -116,6 +125,10 @@ Environment variables override `scrapers/config.py`.
 | `RRF_K` | `60` |
 | `RRF_DENSE_WEIGHT` | `1.0` |
 | `RRF_SPARSE_WEIGHT` | `1.0` |
+| `SCRAPE_MIN_MATCH_SCORE` | `50` |
+| `SCRAPE_MAX_JOBS` | `250` |
+| `DASHBOARD_MIN_MATCH_SCORE` | `50` |
+| `DASHBOARD_MAX_NEW_JOBS` | `250` |
 
 ## Agent Endpoint
 
@@ -133,7 +146,13 @@ The response includes:
 - `faithfulness_score`
 - `match`
 
-The dashboard exposes this in each expanded DB-backed job row as **Agent Apply**.
+The dashboard exposes this in each expanded DB-backed job row as **Grounded Agent**.
+
+## Application Plans
+
+Use **Approved** as the human approval gate before applying. Expanded job rows include **Apply Plan**, which detects the platform and fetches Greenhouse public form questions when possible.
+
+Greenhouse job-list and form-question reads are public, but Greenhouse application submission requires the hiring company's Job Board API key. For third-party jobs, this app prepares the application and opens the listing, but does not silently submit applications. LinkedIn does not provide a general applicant-side apply API for this workflow, so LinkedIn applications remain browser-assisted/manual.
 
 ## Evals
 

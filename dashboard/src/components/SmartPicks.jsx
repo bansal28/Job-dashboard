@@ -6,7 +6,7 @@ import { T, Icon, ICONS, fontMono, fontHeading, fontBody } from "../theme.jsx";
  * Smart Picks — "Apply to these today" curated recommendations.
  * Shows top 10 jobs ranked by: match score + freshness + urgency.
  */
-export default function SmartPicks() {
+export default function SmartPicks({ onApprove }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
@@ -21,6 +21,17 @@ export default function SmartPicks() {
   if (loading || !data || !data.picks || data.picks.length === 0) return null;
 
   const picks = data.picks;
+  const approve = async (jobId) => {
+    if (onApprove) {
+      onApprove(jobId);
+    } else {
+      await api.patch(`/api/jobs/${jobId}`, { status: "Approved" });
+    }
+    setData((prev) => ({
+      ...prev,
+      picks: (prev?.picks || []).filter((job) => job.id !== jobId),
+    }));
+  };
 
   return (
     <div style={{
@@ -60,7 +71,7 @@ export default function SmartPicks() {
       {!collapsed && (
         <div className="fade-in" style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
           {picks.map((job, idx) => (
-            <PickCard key={job.id} job={job} rank={idx + 1} />
+            <PickCard key={job.id} job={job} rank={idx + 1} onApprove={approve} />
           ))}
         </div>
       )}
@@ -68,7 +79,7 @@ export default function SmartPicks() {
   );
 }
 
-function PickCard({ job, rank }) {
+function PickCard({ job, rank, onApprove }) {
   const score = job.match_score || 0;
   const scoreColor = score >= 80 ? T.green : score >= 60 ? T.cyan : T.yellow;
   const freshness = getFreshness(job.date_posted);
@@ -128,7 +139,20 @@ function PickCard({ job, rank }) {
         )}
       </div>
 
-      {/* Apply link */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onApprove(job.id); }}
+        style={{
+          fontSize: 10, color: T.green, textDecoration: "none",
+          padding: "4px 10px", borderRadius: 6,
+          border: `1px solid ${T.green}40`,
+          background: T.greenBg,
+          fontWeight: 600, fontFamily: fontBody,
+          flexShrink: 0, cursor: "pointer",
+        }}
+      >
+        Approve
+      </button>
+
       {job.url && (
         <a href={job.url} target="_blank" rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}

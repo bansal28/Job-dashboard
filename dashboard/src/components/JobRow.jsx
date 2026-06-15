@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { T, STATUS_MAP, ALL_STATUSES, CATEGORY_COLORS, Icon, ICONS, fontMono, buttonStyle, daysAgo } from "../theme.jsx";
 import ApplyPanel from "./ApplyPanel";
 import AgentApplyPanel from "./AgentApplyPanel";
+import ApplicationPlanPanel from "./ApplicationPlanPanel";
 import api from "../api";
 
 /**
@@ -21,6 +22,7 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
   const categoryColor = CATEGORY_COLORS[job.category] || T.dim;
   const [showApply, setShowApply] = useState(false);
   const [showAgentApply, setShowAgentApply] = useState(false);
+  const [showApplicationPlan, setShowApplicationPlan] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [breakdown, setBreakdown] = useState(null);
   const [deadline, setDeadline] = useState(job.deadline || "");
@@ -317,6 +319,21 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                   </a>
                 )}
 
+                {updateStatus && job.url && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowApplicationPlan(!showApplicationPlan); }}
+                    style={{
+                      ...buttonStyle,
+                      background: showApplicationPlan ? T.greenBg : T.card,
+                      color: showApplicationPlan ? T.green : T.dim,
+                      borderColor: showApplicationPlan ? `${T.green}40` : T.border,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Icon d={ICONS.filter} size={11} /> {showApplicationPlan ? "Hide Plan" : "Apply Plan"}
+                  </button>
+                )}
+
                 {updateStatus && (job.full_description || job.description_snippet || job.url) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowAgentApply(!showAgentApply); }}
@@ -356,6 +373,10 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
 
               {showAgentApply && (
                 <AgentApplyPanel jobId={job.id} />
+              )}
+
+              {showApplicationPlan && (
+                <ApplicationPlanPanel jobId={job.id} />
               )}
             </div>
           </td>

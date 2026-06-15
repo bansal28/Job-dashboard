@@ -12,13 +12,23 @@ import ProfileView from "./views/ProfileView";
 
 export default function App() {
   const [jobs, setJobs] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [apiOk, setApiOk] = useState(false);
   const [view, setView] = useState("discover");
 
   const loadJobs = useCallback(async () => {
-    const data = await api.get("/api/jobs");
-    if (Array.isArray(data)) { setJobs(data); setApiOk(true); } else { setApiOk(false); }
+    const [data, summary] = await Promise.all([
+      api.get("/api/jobs?dashboard=true&limit=250&min_score=50"),
+      api.get("/api/stats"),
+    ]);
+    if (Array.isArray(data)) {
+      setJobs(data);
+      if (summary) setStats(summary);
+      setApiOk(true);
+    } else {
+      setApiOk(false);
+    }
     setLoading(false);
   }, []);
 
@@ -78,7 +88,7 @@ export default function App() {
                 Job Hunter
               </div>
               <div style={{ fontSize: 10, color: T.dim, fontFamily: fontMono }}>
-                {jobs.length.toLocaleString()} jobs
+                {jobs.length.toLocaleString()}{stats?.total ? ` / ${stats.total.toLocaleString()}` : ""} jobs
               </div>
             </div>
           </div>
@@ -123,7 +133,7 @@ export default function App() {
         {/* Bottom */}
         <div style={{ padding: "12px 10px 0", borderTop: `1px solid ${T.border}`, margin: "0 10px" }}>
           <button
-            onClick={() => exportCSV(jobs)}
+            onClick={() => exportCSV(jobs, "job_review_queue.csv")}
             style={{
               display: "flex", alignItems: "center", gap: 8, width: "100%",
               padding: "9px 12px", background: "transparent", border: "none",
@@ -138,7 +148,7 @@ export default function App() {
 
       {/* ─── Main ─── */}
       <main style={{ flex: 1, overflow: "auto", minHeight: "100vh" }}>
-        {view === "discover" && <DiscoverView jobs={jobs} updateStatus={updateStatus} updateNotes={updateNotes} deleteJob={deleteJob} reload={loadJobs} />}
+        {view === "discover" && <DiscoverView jobs={jobs} stats={stats} updateStatus={updateStatus} updateNotes={updateNotes} deleteJob={deleteJob} reload={loadJobs} />}
         {view === "pipeline" && <PipelineView jobs={jobs} updateStatus={updateStatus} updateNotes={updateNotes} />}
         {view === "add" && <AddJobView reload={loadJobs} />}
         {view === "csv" && <CsvUploadView />}

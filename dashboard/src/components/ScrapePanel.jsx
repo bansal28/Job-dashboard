@@ -6,8 +6,11 @@ export default function ScrapePanel({ reload }) {
   const [config, setConfig] = useState(null);
   const [selectedSources, setSelectedSources] = useState(["greenhouse"]);
   const [selectedRoleCategories, setSelectedRoleCategories] = useState(["ai_ml"]);
+  const [minMatchScore, setMinMatchScore] = useState(50);
+  const [maxJobs, setMaxJobs] = useState(250);
   const [isScraping, setIsScraping] = useState(false);
   const [progress, setProgress] = useState("");
+  const [intake, setIntake] = useState(null);
   const [showConfig, setShowConfig] = useState(false);
   const pollRef = useRef(null);
 
@@ -18,6 +21,10 @@ export default function ScrapePanel({ reload }) {
       if (Array.isArray(c.default_greenhouse_role_categories) && c.default_greenhouse_role_categories.length) {
         setSelectedRoleCategories(c.default_greenhouse_role_categories);
       }
+      if (c.scrape_defaults) {
+        setMinMatchScore(Number(c.scrape_defaults.min_match_score) || 50);
+        setMaxJobs(Number(c.scrape_defaults.max_jobs) || 250);
+      }
     });
   }, []);
 
@@ -27,6 +34,7 @@ export default function ScrapePanel({ reload }) {
       const status = await api.get("/api/scrape/status");
       if (!status) return;
       setProgress(status.progress || "");
+      if (status.intake) setIntake(status.intake);
       if (!status.running) { clearInterval(pollRef.current); pollRef.current = null; setIsScraping(false); reload(); }
     }, 1500);
   }, [reload]);
@@ -36,6 +44,8 @@ export default function ScrapePanel({ reload }) {
     const result = await api.post("/api/scrape", {
       sources: selectedSources,
       role_categories: selectedSources.includes("greenhouse") ? selectedRoleCategories : [],
+      min_match_score: Number(minMatchScore) || 0,
+      max_jobs: Number(maxJobs) || 0,
     });
     if (result) startPolling(); else { setIsScraping(false); setProgress("Failed"); }
   };
@@ -154,6 +164,39 @@ export default function ScrapePanel({ reload }) {
         </div>
       )}
 
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, color: T.dim, fontSize: 10.5, fontFamily: fontMono }}>
+          Min score
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={minMatchScore}
+            onChange={(e) => setMinMatchScore(e.target.value)}
+            style={{
+              width: 66, background: T.bg, border: `1px solid ${T.border}`,
+              borderRadius: 7, padding: "5px 7px", color: T.text,
+              fontSize: 11, fontFamily: fontMono,
+            }}
+          />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, color: T.dim, fontSize: 10.5, fontFamily: fontMono }}>
+          Queue cap
+          <input
+            type="number"
+            min="0"
+            max="2000"
+            value={maxJobs}
+            onChange={(e) => setMaxJobs(e.target.value)}
+            style={{
+              width: 74, background: T.bg, border: `1px solid ${T.border}`,
+              borderRadius: 7, padding: "5px 7px", color: T.text,
+              fontSize: 11, fontFamily: fontMono,
+            }}
+          />
+        </label>
+      </div>
+
       {progress && (
         <div style={{
           fontSize: 11, color: isScraping ? T.cyan : T.green,
@@ -162,6 +205,11 @@ export default function ScrapePanel({ reload }) {
           borderRadius: 8, fontFamily: fontMono,
         }}>
           {progress}
+          {intake && (
+            <span style={{ display: "block", marginTop: 4, color: T.dim }}>
+              Raw {intake.raw_count} · eligible {intake.eligible_count} · selected {intake.selected_count}
+            </span>
+          )}
         </div>
       )}
 

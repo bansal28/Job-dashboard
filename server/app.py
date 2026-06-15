@@ -20,12 +20,19 @@ from database import (init_db, insert_jobs, get_jobs, update_job, add_manual_job
     get_last_scrape, recategorize_all,
     add_task, get_tasks, update_task, complete_task_by_company, get_tasks_summary)
 from categorizer import enrich_job
+from intake import dashboard_job_subset, select_scrape_candidates
 from apply_engine import generate_application
 from llm_client import configured_llm_label, has_llm_key
 from match_engine import score_all_jobs, get_score_breakdown, get_profile, reload_profile
 from profile_manager import get_resume_profile, save_resume_profile
 from resume_chunks import load_resume_chunks
-from settings import get_setting
+from settings import (
+    DASHBOARD_MAX_NEW_JOBS,
+    DASHBOARD_MIN_MATCH_SCORE,
+    SCRAPE_MAX_JOBS,
+    SCRAPE_MIN_MATCH_SCORE,
+    get_setting,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,11 +48,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-scrape_state = {"running": False, "progress": "", "log_id": None}
+scrape_state = {"running": False, "progress": "", "log_id": None, "intake": None}
 
 class ScrapeRequest(BaseModel):
     sources: list[str] = ["greenhouse"]
     role_categories: list[str] = ["ai_ml"]
+    min_match_score: int = SCRAPE_MIN_MATCH_SCORE
+    max_jobs: int = SCRAPE_MAX_JOBS
 
 class JobUpdate(BaseModel):
     status: str | None = None
@@ -82,8 +91,10 @@ def start_scrape(req: ScrapeRequest):
     def run():
         scrape_state["running"] = True
         scrape_state["progress"] = "Starting..."
+        scrape_state["intake"] = None
         log_id = log_scrape(req.sources)
         total_found = total_new = 0
+        raw_jobs = []
         try:
             import config as local_config
             from greenhouse_board_registry import resolve_greenhouse_boards
@@ -108,22 +119,19 @@ def start_scrape(req: ScrapeRequest):
                     role_categories=req.role_categories,
                     max_workers=GREENHOUSE_MAX_WORKERS,
                 )
-                jobs = [enrich_job(j) for j in raw]
-                f, n = insert_jobs(jobs); total_found += f; total_new += n
+                raw_jobs.extend(enrich_job(j) for j in raw)
 
             if "reed" in req.sources:
                 scrape_state["progress"] = "Scraping Reed..."
                 from reed_scraper import scrape_reed
                 raw = scrape_reed(REED_API_KEY, SEARCH_QUERIES, LOCATIONS, MAX_RESULTS_PER_QUERY)
-                jobs = [enrich_job(j) for j in raw]
-                f, n = insert_jobs(jobs); total_found += f; total_new += n
+                raw_jobs.extend(enrich_job(j) for j in raw)
 
             if "adzuna" in req.sources:
                 scrape_state["progress"] = "Scraping Adzuna..."
                 from adzuna_scraper import scrape_adzuna
                 raw = scrape_adzuna(ADZUNA_APP_ID, ADZUNA_APP_KEY, SEARCH_QUERIES, LOCATIONS, MAX_RESULTS_PER_QUERY)
-                jobs = [enrich_job(j) for j in raw]
-                f, n = insert_jobs(jobs); total_found += f; total_new += n
+                raw_jobs.extend(enrich_job(j) for j in raw)
 
             if "gradcracker" in req.sources:
                 if not _module_available("bs4"):
@@ -132,8 +140,7 @@ def start_scrape(req: ScrapeRequest):
                     scrape_state["progress"] = "Scraping GradCracker..."
                     from gradcracker_scraper import scrape_gradcracker
                     raw = scrape_gradcracker()
-                    jobs = [enrich_job(j) for j in raw]
-                    f, n = insert_jobs(jobs); total_found += f; total_new += n
+                    raw_jobs.extend(enrich_job(j) for j in raw)
 
             if "otta" in req.sources:
                 if not _module_available("bs4"):
@@ -142,11 +149,24 @@ def start_scrape(req: ScrapeRequest):
                     scrape_state["progress"] = "Scraping Otta / WTTJ..."
                     from otta_scraper import scrape_otta
                     raw = scrape_otta()
-                    jobs = [enrich_job(j) for j in raw]
-                    f, n = insert_jobs(jobs); total_found += f; total_new += n
+                    raw_jobs.extend(enrich_job(j) for j in raw)
+
+            total_found = len(raw_jobs)
+            scrape_state["progress"] = f"Scoring {total_found} jobs for review queue..."
+            selected_jobs, intake = select_scrape_candidates(
+                raw_jobs,
+                min_match_score=req.min_match_score,
+                max_jobs=req.max_jobs,
+            )
+            scrape_state["intake"] = intake
+            f, n = insert_jobs(selected_jobs)
+            total_new += n
 
             finish_scrape(log_id, total_found, total_new, "done")
-            scrape_state["progress"] = f"Done! {total_new} new / {total_found} total"
+            scrape_state["progress"] = (
+                f"Done. Kept {intake['selected_count']} of {intake['unique_count']} unique jobs "
+                f"({total_new} new inserted)."
+            )
         except Exception as e:
             finish_scrape(log_id, total_found, total_new, f"error: {e}")
             scrape_state["progress"] = f"Error: {e}"
@@ -158,13 +178,38 @@ def start_scrape(req: ScrapeRequest):
 
 @app.get("/api/scrape/status")
 def scrape_status():
-    return {"running": scrape_state["running"], "progress": scrape_state["progress"], "last_scrape": get_last_scrape()}
+    return {
+        "running": scrape_state["running"],
+        "progress": scrape_state["progress"],
+        "last_scrape": get_last_scrape(),
+        "intake": scrape_state.get("intake"),
+    }
 
 # ── Jobs ──
 @app.get("/api/jobs")
-def list_jobs(status: str = None, source: str = None, is_uk: str = None, category: str = None, city: str = None):
+def list_jobs(
+    status: str = None,
+    source: str = None,
+    is_uk: str = None,
+    category: str = None,
+    city: str = None,
+    min_score: int = 0,
+    limit: int = 0,
+    dashboard: bool = False,
+):
     jobs = get_jobs(status=status, source=source, is_uk=is_uk, category=category, city=city)
     score_all_jobs(jobs)
+    if dashboard:
+        jobs = dashboard_job_subset(
+            jobs,
+            min_match_score=min_score or DASHBOARD_MIN_MATCH_SCORE,
+            max_new_jobs=limit or DASHBOARD_MAX_NEW_JOBS,
+        )
+    else:
+        if min_score:
+            jobs = [job for job in jobs if int(job.get("match_score") or 0) >= min_score]
+        if limit:
+            jobs = jobs[:limit]
     return jobs
 
 @app.get("/api/picks")
@@ -334,7 +379,7 @@ def upcoming_deadlines():
     deadlines = data.get("deadlines", [])
     follow_ups = data.get("follow_ups", [])
     # Only show deadlines for jobs the user cares about
-    active_statuses = {"Saved", "Applied", "Interview"}
+    active_statuses = {"Saved", "Approved", "Applied", "Interview"}
     deadlines = [d for d in deadlines if d.get("status") in active_statuses]
     follow_ups = [f for f in follow_ups if f.get("status") in active_statuses]
     today = datetime.now().strftime("%Y-%m-%d")
@@ -367,6 +412,12 @@ def get_config():
                 "greenhouse_board_presets": getattr(local_config, "GREENHOUSE_BOARD_PRESETS", ["europe_tech"]),
                 "greenhouse_role_categories": get_role_category_options(),
                 "default_greenhouse_role_categories": ["ai_ml"],
+                "scrape_defaults": {
+                    "min_match_score": SCRAPE_MIN_MATCH_SCORE,
+                    "max_jobs": SCRAPE_MAX_JOBS,
+                    "dashboard_min_match_score": DASHBOARD_MIN_MATCH_SCORE,
+                    "dashboard_max_new_jobs": DASHBOARD_MAX_NEW_JOBS,
+                },
                 "optional_sources": _optional_source_status(),
                 "has_reed_key": bool(get_setting("REED_API_KEY", "")),
                 "has_adzuna_key": bool(get_setting("ADZUNA_APP_ID", "")),
@@ -379,6 +430,12 @@ def get_config():
                 "greenhouse_board_presets": ["europe_tech"],
                 "greenhouse_role_categories": [],
                 "default_greenhouse_role_categories": ["ai_ml"],
+                "scrape_defaults": {
+                    "min_match_score": SCRAPE_MIN_MATCH_SCORE,
+                    "max_jobs": SCRAPE_MAX_JOBS,
+                    "dashboard_min_match_score": DASHBOARD_MIN_MATCH_SCORE,
+                    "dashboard_max_new_jobs": DASHBOARD_MAX_NEW_JOBS,
+                },
                 "optional_sources": _optional_source_status(),
                 "has_reed_key": False, "has_adzuna_key": False,
                 "has_groq_key": False, "has_openai_key": False,
@@ -498,6 +555,18 @@ def agent_apply(job_id: str):
     try:
         from job_agent import run_apply_agent
         return run_apply_agent(job_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.get("/api/application-plan/{job_id}")
+def application_plan(job_id: str):
+    """Return platform capabilities and form metadata for an approved application."""
+    try:
+        from application_planner import build_application_plan
+        return build_application_plan(job_id)
     except ValueError as exc:
         raise HTTPException(404, str(exc))
     except Exception as exc:
