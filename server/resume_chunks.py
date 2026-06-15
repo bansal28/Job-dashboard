@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Iterable
 
 try:
-    from .settings import RESUME_PATH
+    from .profile_manager import get_active_resume_path
 except ImportError:  # pragma: no cover - supports direct module imports
-    from settings import RESUME_PATH
+    from profile_manager import get_active_resume_path
 
 
 @dataclass(frozen=True)
@@ -35,18 +35,22 @@ class ResumeChunk:
         return data
 
 
-def load_resume_chunks(path: Path | str = RESUME_PATH) -> list[ResumeChunk]:
-    path = Path(path)
-    if not path.exists():
+def load_resume_chunks(path: Path | str | None = None) -> list[ResumeChunk]:
+    resume_path = _resolve_resume_path(path)
+    if not resume_path.exists():
         return []
-    return chunk_resume_latex(path.read_text(encoding="utf-8"))
+    return chunk_resume_latex(resume_path.read_text(encoding="utf-8"))
 
 
-def resume_fingerprint(path: Path | str = RESUME_PATH) -> str:
-    path = Path(path)
-    if not path.exists():
+def resume_fingerprint(path: Path | str | None = None) -> str:
+    resume_path = _resolve_resume_path(path)
+    if not resume_path.exists():
         return "missing"
-    return hashlib.sha1(path.read_bytes()).hexdigest()
+    return hashlib.sha1(resume_path.read_bytes()).hexdigest()
+
+
+def _resolve_resume_path(path: Path | str | None = None) -> Path:
+    return Path(path) if path is not None else get_active_resume_path()
 
 
 def chunk_resume_latex(content: str) -> list[ResumeChunk]:

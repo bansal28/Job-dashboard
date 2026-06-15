@@ -5,6 +5,7 @@ Job Hunter is a local-first application tracker that now combines scraping, Gmai
 ## What It Does
 
 - Scrapes jobs from Reed, Adzuna, Greenhouse, Gradcracker, and Otta/WTTJ into SQLite.
+- Lets each local user upload their own resume profile, with a `.tex` source used for RAG and generation.
 - Scores jobs against the resume with hybrid retrieval: dense Chroma vectors plus a from-scratch TF-IDF sparse retriever fused by RRF.
 - Runs an apply agent that extracts JD requirements, retrieves resume evidence, drafts a cover letter, and returns exact cited resume chunks.
 - Tracks application replies from Gmail and updates pipeline status.
@@ -16,7 +17,8 @@ Job Hunter is a local-first application tracker that now combines scraping, Gmai
 flowchart TD
     Scrapers[Job scrapers] --> DB[(SQLite jobs.db)]
     Gmail[Gmail IMAP + LLM classifier] --> DB
-    Resume[resume_base.tex] --> Chunker[Resume chunker]
+    Profile[Uploaded profile resume] --> Chunker[Resume chunker]
+    Resume[resume_base.tex fallback] --> Chunker
     Chunker --> Sparse[TF-IDF sparse retriever]
     Chunker --> Dense[SentenceTransformers embeddings]
     Dense --> Chroma[(Local Chroma store)]
@@ -40,6 +42,7 @@ flowchart TD
 |---|---|
 | FastAPI routes | `server/app.py` |
 | SQLite access | `server/database.py` |
+| User resume profile | `server/profile_manager.py`, `dashboard/src/views/ProfileView.jsx` |
 | Hybrid retrieval | `server/hybrid_retriever.py`, `server/tfidf_retriever.py`, `server/vector_store.py` |
 | Resume chunking | `server/resume_chunks.py` |
 | Legacy + hybrid match scoring | `server/match_engine.py` |
@@ -70,6 +73,10 @@ cd ..
 
 Dashboard: `http://localhost:5173`
 API docs: `http://localhost:8000/docs`
+
+## Resume Profile
+
+Open **Profile** in the dashboard and upload a LaTeX resume source (`.tex`, `.latex`, or `.txt`). That uploaded source is stored locally in `data/profile/active_resume.tex` and becomes the active input for chunking, hybrid retrieval, match scoring, Smart Apply, the LangGraph apply agent, and evals. You can also attach the original resume file (`.pdf`, `.doc`, `.docx`, or `.tex`) for profile storage; the `.tex` source is what powers RAG.
 
 ## Configuration
 

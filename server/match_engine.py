@@ -11,22 +11,21 @@ Scoring breakdown:
 """
 
 import re
-from pathlib import Path
 
 try:
     from .hybrid_retriever import get_retriever, reload_retriever
+    from .profile_manager import get_active_resume_path
     from .settings import RETRIEVAL_METHOD
 except ImportError:  # pragma: no cover - supports FastAPI's top-level imports
     try:
         from hybrid_retriever import get_retriever, reload_retriever
+        from profile_manager import get_active_resume_path
         from settings import RETRIEVAL_METHOD
     except Exception:  # keeps legacy scoring available
         get_retriever = None
+        get_active_resume_path = None
         reload_retriever = None
         RETRIEVAL_METHOD = "hybrid"
-
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-RESUME_PATH = TEMPLATES_DIR / "resume_base.tex"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -36,7 +35,9 @@ RESUME_PATH = TEMPLATES_DIR / "resume_base.tex"
 def load_profile() -> dict:
     """Extract candidate profile from resume LaTeX file."""
     try:
-        with open(RESUME_PATH, "r", encoding="utf-8") as f:
+        if get_active_resume_path is None:
+            return _default_profile()
+        with open(get_active_resume_path(), "r", encoding="utf-8") as f:
             content = f.read().lower()
     except FileNotFoundError:
         return _default_profile()

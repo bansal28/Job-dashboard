@@ -21,7 +21,9 @@ from database import (init_db, insert_jobs, get_jobs, update_job, add_manual_job
 from categorizer import enrich_job
 from apply_engine import generate_application
 from llm_client import configured_llm_label, has_llm_key
-from match_engine import score_all_jobs, get_score_breakdown, reload_profile
+from match_engine import score_all_jobs, get_score_breakdown, get_profile, reload_profile
+from profile_manager import get_resume_profile, save_resume_profile
+from resume_chunks import load_resume_chunks
 from settings import get_setting
 
 @asynccontextmanager
@@ -57,6 +59,12 @@ class RetrievalRequest(BaseModel):
     query: str
     k: int = 6
     method: str = "hybrid"
+
+class ResumeProfileUpload(BaseModel):
+    latex_filename: str = ""
+    latex_content: str = ""
+    resume_filename: str = ""
+    resume_content_base64: str = ""
 
 # ── Scraping ──
 @app.post("/api/scrape")
@@ -229,6 +237,41 @@ def retrieve_resume(body: RetrievalRequest):
         "query": body.query,
         "method": body.method,
         "results": retrieve(body.query, k=body.k, method=body.method),
+    }
+
+# ── User Profile / Resume Source ──
+@app.get("/api/profile/resume")
+def profile_resume():
+    """Return active resume profile metadata without exposing file contents."""
+    return _resume_profile_payload()
+
+@app.post("/api/profile/resume")
+def upload_profile_resume(body: ResumeProfileUpload):
+    """Upload user resume files and make the LaTeX source active for RAG."""
+    try:
+        save_resume_profile(
+            latex_filename=body.latex_filename,
+            latex_content=body.latex_content,
+            resume_filename=body.resume_filename,
+            resume_content_base64=body.resume_content_base64,
+        )
+        reload_profile()
+        return _resume_profile_payload()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+def _resume_profile_payload() -> dict:
+    profile = get_resume_profile()
+    chunks = load_resume_chunks()
+    parsed = get_profile()
+    return {
+        **profile,
+        "chunk_count": len(chunks),
+        "skills_count": len(parsed.get("skills", [])),
+        "experience_years": parsed.get("years_experience", 0),
+        "education": parsed.get("education_level", "unknown"),
+        "domains": sorted(parsed.get("domains", [])),
     }
 
 # ── Deadline tracking ──

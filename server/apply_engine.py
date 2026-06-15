@@ -16,11 +16,12 @@ from html import unescape
 
 try:
     from .llm_client import call_llm, has_llm_key
+    from .profile_manager import get_active_resume_path
 except ImportError:  # pragma: no cover
     from llm_client import call_llm, has_llm_key
+    from profile_manager import get_active_resume_path
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-RESUME_TEMPLATE = TEMPLATES_DIR / "resume_base.tex"
 COVER_LETTER_TEMPLATE = TEMPLATES_DIR / "cover_letter_base.tex"
 
 
@@ -159,7 +160,7 @@ def generate_application(job: dict, api_key: str = "") -> dict:
     if not api_key and not has_llm_key():
         return {"error": "No LLM API key configured. Add OPENAI_API_KEY or GROQ_API_KEY to scrapers/config.py"}
 
-    resume_base = load_template(RESUME_TEMPLATE)
+    resume_base = load_template(get_active_resume_path())
     cover_base = load_template(COVER_LETTER_TEMPLATE)
 
     title = job.get("title", "")

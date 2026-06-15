@@ -8,6 +8,7 @@ import AddJobView from "./views/AddJobView";
 import CsvUploadView from "./views/CsvUploadView";
 import EmailTrackerView from "./views/EmailTrackerView";
 import AnalyticsView from "./views/AnalyticsView";
+import ProfileView from "./views/ProfileView";
 
 export default function App() {
   const [jobs, setJobs] = useState([]);
@@ -45,6 +46,7 @@ export default function App() {
     { id: "discover", label: "Discover", icon: ICONS.search, count: jobs.filter((j) => j.status === "New").length },
     { id: "pipeline", label: "Pipeline", icon: ICONS.filter, count: jobs.filter((j) => PIPELINE_COLS.includes(j.status)).length },
     { id: "analytics", label: "Analytics", icon: ICONS.barChart },
+    { id: "profile", label: "Profile", icon: ICONS.file },
     { id: "add", label: "Add Job", icon: ICONS.plus },
     { id: "csv", label: "Browse CSV", icon: ICONS.file },
     { id: "emails", label: "Emails", icon: ICONS.mail },
@@ -141,6 +143,7 @@ export default function App() {
         {view === "add" && <AddJobView reload={loadJobs} />}
         {view === "csv" && <CsvUploadView />}
         {view === "analytics" && <AnalyticsView />}
+        {view === "profile" && <ProfileView reloadJobs={loadJobs} />}
         {view === "emails" && <EmailTrackerView />}
       </main>
     </div>
