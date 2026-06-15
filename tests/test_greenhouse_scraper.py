@@ -30,6 +30,16 @@ def test_greenhouse_role_filter_rejects_unselected_category():
     assert labels == []
 
 
+def test_greenhouse_role_filter_rejects_ai_company_boilerplate_for_non_tech_role():
+    labels = _matched_role_categories(
+        "Account Executive - Data as a Service",
+        "Snorkel AI builds data-centric AI systems and machine learning platforms.",
+        ["ai_ml"],
+    )
+
+    assert labels == []
+
+
 def test_greenhouse_role_category_options_are_ui_ready():
     options = get_role_category_options()
 

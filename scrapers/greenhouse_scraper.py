@@ -43,6 +43,13 @@ EXCLUDE_KEYWORDS = [
     "office manager", "executive assistant", "admin ",
     "customer success", "customer support",
     "content writer", "copywriter", "social media",
+    "account executive", "business development", "partnership",
+    "community manager", "deal desk",
+]
+
+TECHNICAL_ROLE_NOUNS = [
+    "engineer", "developer", "scientist", "research", "architect",
+    "sre", "devops", "programmer", "analyst", "security",
 ]
 
 DEFAULT_ROLE_CATEGORIES = ["ai_ml"]
@@ -58,6 +65,7 @@ ROLE_CATEGORIES = {
             "deep learning", "neural net", "computer vision",
             "nlp", "natural language", "language model", "llm",
             "reinforcement learning", "generative ai", "gen ai",
+            "ai product", "ai intern", "ml intern",
             "applied scientist", "research scientist", "research engineer",
             "pytorch", "tensorflow", "model training", "model deployment",
         ],
@@ -260,14 +268,17 @@ def _normalize_role_categories(role_categories: list[str] | None) -> list[str]:
 def _matched_role_categories(title: str, content: str, selected_categories: list[str]) -> list[str]:
     if not selected_categories:
         return []
-    title_text = title.lower()
-    text = f" {title.lower()} {content[:3000].lower()} "
+    title_text = f" {title.lower()} "
+    context_text = f"{title_text} {content[:1200].lower()} "
     if any(kw in title_text for kw in EXCLUDE_KEYWORDS):
         return []
+    is_technical_title = any(keyword in title_text for keyword in TECHNICAL_ROLE_NOUNS)
     labels = []
     for category_id in selected_categories:
         keywords = ROLE_CATEGORIES[category_id]["keywords"]
-        if any(keyword in text for keyword in keywords):
+        title_match = any(keyword in title_text for keyword in keywords)
+        context_match = is_technical_title and any(keyword in context_text for keyword in keywords)
+        if title_match or context_match:
             labels.append(_role_label(category_id))
     return labels
 

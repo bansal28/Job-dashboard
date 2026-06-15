@@ -22,6 +22,7 @@ CATEGORIES = {
         "deep learning", "neural net", "computer vision",
         "nlp", "natural language", "language model", "llm",
         "reinforcement learning", "generative ai", "gen ai",
+        "ai product", "ai intern", "ml intern",
         "applied scientist", "research scientist", "research engineer",
         "pytorch", "tensorflow", "model training",
     ],
@@ -103,6 +104,18 @@ CATEGORIES = {
         "developer", "programmer", "coder",
     ],
 }
+
+NON_TECH_TITLE_KEYWORDS = [
+    "account executive", "sales", "business development", "partnership",
+    "community manager", "advocate", "marketing", "recruiter", "talent",
+    "people partner", "legal", "counsel", "finance", "deal desk",
+    "customer success", "support manager",
+]
+
+TECHNICAL_ROLE_NOUNS = [
+    "engineer", "developer", "scientist", "research", "architect",
+    "sre", "devops", "programmer", "analyst", "security",
+]
 
 # ═══════════════════════════════════════════════════════════
 # UK CITIES & LOCATION NORMALIZATION
@@ -203,7 +216,21 @@ REMOTE_INDICATORS = ["remote", "work from home", "wfh", "anywhere", "distributed
 
 def categorize_job(title: str, description: str = "") -> str:
     """Return the best category for a job based on title and description."""
-    text = f" {title.lower()} {description[:500].lower()} "
+    title_text = f" {title.lower()} "
+    is_technical_title = any(keyword in title_text for keyword in TECHNICAL_ROLE_NOUNS)
+
+    if any(keyword in title_text for keyword in NON_TECH_TITLE_KEYWORDS) and not is_technical_title:
+        return "Other"
+
+    for category, keywords in CATEGORIES.items():
+        for kw in keywords:
+            if kw in title_text:
+                return category
+
+    if not is_technical_title:
+        return "Other"
+
+    text = f"{title_text} {description[:500].lower()} "
 
     for category, keywords in CATEGORIES.items():
         for kw in keywords:

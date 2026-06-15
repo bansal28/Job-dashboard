@@ -9,6 +9,7 @@ from pathlib import Path
 from .generation import evaluate_generation, write_generation_results
 from .retrieval import evaluate_retrieval, write_retrieval_results
 from .schema import load_dataset
+from server.resume_chunks import load_resume_chunks, resume_fingerprint
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -20,6 +21,11 @@ def main() -> None:
     parser.add_argument("--generation-limit", type=int, default=5, help="Number of labelled examples for generation eval.")
     parser.add_argument("--judge-backend", choices=["llm", "openai", "groq", "ragas"], default="llm")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--allow-stale-labels",
+        action="store_true",
+        help="Run even when labelled chunk IDs do not exist in the active resume.",
+    )
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -29,6 +35,16 @@ def main() -> None:
 
     all_examples = load_dataset()
     labelled = [example for example in all_examples if example.is_labelled]
+    stale = _stale_label_report(labelled)
+    if stale["missing_label_ids"] and not args.allow_stale_labels:
+        stale_path = output_dir / "stale_labels.json"
+        stale_path.write_text(json.dumps(stale, indent=2), encoding="utf-8")
+        raise SystemExit(
+            "Eval labels do not match the active resume. "
+            f"{stale['missing_label_ids']} labelled chunk IDs are missing. "
+            f"Relabel evals/dataset.jsonl for resume {stale['resume_hash'][:12]} "
+            f"or rerun with --allow-stale-labels. Details: {stale_path}"
+        )
 
     retrieval_rows, retrieval_details = evaluate_retrieval(labelled, k=args.k)
     retrieval_md, retrieval_csv = write_retrieval_results(retrieval_rows, retrieval_details, output_dir)
@@ -60,6 +76,22 @@ def main() -> None:
 def _avg(rows: list[dict], key: str) -> float:
     values = [float(row.get(key, 0.0)) for row in rows if key in row]
     return round(sum(values) / len(values), 4) if values else 0.0
+
+
+def _stale_label_report(examples) -> dict:
+    active_ids = {chunk.id for chunk in load_resume_chunks()}
+    missing = []
+    for example in examples:
+        for chunk_id in example.relevant_chunk_ids:
+            if chunk_id not in active_ids:
+                missing.append({"example_id": example.id, "chunk_id": chunk_id})
+    return {
+        "resume_hash": resume_fingerprint(),
+        "active_chunk_count": len(active_ids),
+        "labelled_examples": len(examples),
+        "missing_label_ids": len(missing),
+        "missing": missing[:100],
+    }
 
 
 def _summary_markdown(summary: dict) -> str:

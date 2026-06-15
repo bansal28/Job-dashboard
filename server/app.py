@@ -1,6 +1,7 @@
 """
 Job Hunter API Server
 """
+import importlib.util
 import sys, threading
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -34,7 +35,12 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Job Hunter API", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 scrape_state = {"running": False, "progress": "", "log_id": None}
 
 class ScrapeRequest(BaseModel):
@@ -120,18 +126,24 @@ def start_scrape(req: ScrapeRequest):
                 f, n = insert_jobs(jobs); total_found += f; total_new += n
 
             if "gradcracker" in req.sources:
-                scrape_state["progress"] = "Scraping GradCracker..."
-                from gradcracker_scraper import scrape_gradcracker
-                raw = scrape_gradcracker()
-                jobs = [enrich_job(j) for j in raw]
-                f, n = insert_jobs(jobs); total_found += f; total_new += n
+                if not _module_available("bs4"):
+                    print("[GradCracker] beautifulsoup4 not installed — skipping")
+                else:
+                    scrape_state["progress"] = "Scraping GradCracker..."
+                    from gradcracker_scraper import scrape_gradcracker
+                    raw = scrape_gradcracker()
+                    jobs = [enrich_job(j) for j in raw]
+                    f, n = insert_jobs(jobs); total_found += f; total_new += n
 
             if "otta" in req.sources:
-                scrape_state["progress"] = "Scraping Otta / WTTJ..."
-                from otta_scraper import scrape_otta
-                raw = scrape_otta()
-                jobs = [enrich_job(j) for j in raw]
-                f, n = insert_jobs(jobs); total_found += f; total_new += n
+                if not _module_available("bs4"):
+                    print("[Otta/WTTJ] beautifulsoup4 not installed — skipping")
+                else:
+                    scrape_state["progress"] = "Scraping Otta / WTTJ..."
+                    from otta_scraper import scrape_otta
+                    raw = scrape_otta()
+                    jobs = [enrich_job(j) for j in raw]
+                    f, n = insert_jobs(jobs); total_found += f; total_new += n
 
             finish_scrape(log_id, total_found, total_new, "done")
             scrape_state["progress"] = f"Done! {total_new} new / {total_found} total"
@@ -355,6 +367,7 @@ def get_config():
                 "greenhouse_board_presets": getattr(local_config, "GREENHOUSE_BOARD_PRESETS", ["europe_tech"]),
                 "greenhouse_role_categories": get_role_category_options(),
                 "default_greenhouse_role_categories": ["ai_ml"],
+                "optional_sources": _optional_source_status(),
                 "has_reed_key": bool(get_setting("REED_API_KEY", "")),
                 "has_adzuna_key": bool(get_setting("ADZUNA_APP_ID", "")),
                 "has_groq_key": bool(get_setting("GROQ_API_KEY", "")),
@@ -366,6 +379,7 @@ def get_config():
                 "greenhouse_board_presets": ["europe_tech"],
                 "greenhouse_role_categories": [],
                 "default_greenhouse_role_categories": ["ai_ml"],
+                "optional_sources": _optional_source_status(),
                 "has_reed_key": False, "has_adzuna_key": False,
                 "has_groq_key": False, "has_openai_key": False,
                 "llm": configured_llm_label()}
@@ -375,6 +389,19 @@ def get_config():
 def recategorize():
     count = recategorize_all()
     return {"recategorized": count}
+
+
+def _module_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+
+def _optional_source_status() -> dict:
+    has_html_parser = _module_available("bs4")
+    parser_reason = "Install beautifulsoup4 to enable this HTML scraper."
+    return {
+        "gradcracker": {"available": has_html_parser, "reason": "" if has_html_parser else parser_reason},
+        "otta": {"available": has_html_parser, "reason": "" if has_html_parser else parser_reason},
+    }
 
 # ── Tasks (Assignments, Coding Challenges) ──
 @app.get("/api/tasks")

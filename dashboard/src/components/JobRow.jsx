@@ -164,9 +164,11 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                     marginBottom: 12, fontSize: 10.5, color: T.dim,
                   }}>
                     <span style={{ color: T.cyan, background: T.cyanBg, border: `1px solid ${T.cyanDim}`, borderRadius: 4, padding: "3px 8px" }}>
-                      {String(breakdown.method || "hybrid").toUpperCase()} score: {breakdown.retrieval_score ?? breakdown.total_score}%
+                      Displayed: {breakdown.total_score}%
                     </span>
-                    <span>Legacy heuristic: {breakdown.legacy_score}%</span>
+                    <span>{String(breakdown.method || "hybrid").toUpperCase()} evidence: {breakdown.retrieval_score ?? 0}%</span>
+                    <span>Heuristic: {breakdown.legacy_score}%</span>
+                    {breakdown.role_cap < 100 && <span>Role-fit cap: {breakdown.role_cap}%</span>}
                   </div>
 
                   {/* Score bars */}
@@ -315,22 +317,6 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                   </a>
                 )}
 
-                {/* Smart Apply button */}
-                {(job.full_description || job.description_snippet || job.url) && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowApply(!showApply); }}
-                    style={{
-                      ...buttonStyle,
-                      background: showApply ? T.purpleBg : T.card,
-                      color: showApply ? T.purple : T.dim,
-                      borderColor: showApply ? "#4c1d95" : T.border,
-                      fontWeight: 600,
-                    }}
-                  >
-                    <Icon d={ICONS.zap} size={11} /> {showApply ? "Hide" : "Smart Apply"}
-                  </button>
-                )}
-
                 {updateStatus && (job.full_description || job.description_snippet || job.url) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowAgentApply(!showAgentApply); }}
@@ -342,7 +328,23 @@ export default function JobRow({ job, isExpanded, onToggle, updateStatus, update
                       fontWeight: 600,
                     }}
                   >
-                    <Icon d={ICONS.zap} size={11} /> {showAgentApply ? "Hide Agent" : "Agent Apply"}
+                    <Icon d={ICONS.zap} size={11} /> {showAgentApply ? "Hide Agent" : "Grounded Agent"}
+                  </button>
+                )}
+
+                {/* LaTeX Apply button */}
+                {(job.full_description || job.description_snippet || job.url) && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowApply(!showApply); }}
+                    style={{
+                      ...buttonStyle,
+                      background: showApply ? T.purpleBg : T.card,
+                      color: showApply ? T.purple : T.dim,
+                      borderColor: showApply ? "#4c1d95" : T.border,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Icon d={ICONS.zap} size={11} /> {showApply ? "Hide LaTeX" : "LaTeX Apply"}
                   </button>
                 )}
               </div>

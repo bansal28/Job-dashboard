@@ -52,8 +52,18 @@ export default function ScrapePanel({ reload }) {
     { id: "greenhouse", label: "Greenhouse", ok: true },
     { id: "reed", label: "Reed", ok: config?.has_reed_key },
     { id: "adzuna", label: "Adzuna", ok: config?.has_adzuna_key },
-    { id: "gradcracker", label: "GradCracker", ok: true },
-    { id: "otta", label: "Otta", ok: true },
+    {
+      id: "gradcracker",
+      label: "GradCracker",
+      ok: config?.optional_sources?.gradcracker?.available,
+      reason: config?.optional_sources?.gradcracker?.reason,
+    },
+    {
+      id: "otta",
+      label: "Otta",
+      ok: config?.optional_sources?.otta?.available,
+      reason: config?.optional_sources?.otta?.reason,
+    },
   ];
 
   return (
@@ -79,6 +89,7 @@ export default function ScrapePanel({ reload }) {
             <button
               key={s.id}
               onClick={() => s.ok && toggleSource(s.id)}
+              title={s.ok ? s.label : (s.reason || "Not configured")}
               style={{
                 background: selectedSources.includes(s.id) ? T.cyanBg : "rgba(255,255,255,0.03)",
                 border: `1px solid ${selectedSources.includes(s.id) ? T.cyanDim : T.border}`,
@@ -181,6 +192,11 @@ export default function ScrapePanel({ reload }) {
                 </div>
               </div>
             ) : null
+          )}
+          {allSources.some((s) => !s.ok && s.reason) && (
+            <div style={{ marginTop: 8, color: T.yellow, fontSize: 10.5, fontFamily: fontMono }}>
+              Disabled sources: {allSources.filter((s) => !s.ok && s.reason).map((s) => `${s.label} (${s.reason})`).join("; ")}
+            </div>
           )}
           <div style={{ fontSize: 10, color: T.dim, marginTop: 4, fontStyle: "italic" }}>Edit scrapers/config.py</div>
         </div>

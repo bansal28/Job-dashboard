@@ -7,7 +7,7 @@ const api = {
   get: async (url) => {
     try {
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new Error(await responseError(response));
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("json")) throw new Error("Response not JSON");
       return await response.json();
@@ -24,7 +24,7 @@ const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new Error(await responseError(response));
       return await response.json();
     } catch (err) {
       console.warn(`API POST ${url}:`, err.message);
@@ -56,3 +56,12 @@ const api = {
 };
 
 export default api;
+
+async function responseError(response) {
+  try {
+    const data = await response.json();
+    return data?.detail || data?.error || `HTTP ${response.status}`;
+  } catch {
+    return `HTTP ${response.status}`;
+  }
+}

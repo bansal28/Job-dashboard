@@ -38,7 +38,7 @@ export default function AgentApplyPanel({ jobId }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon d={ICONS.zap} size={15} style={{ color: T.purple }} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, color: T.bright, fontWeight: 500 }}>Agent Apply</div>
+            <div style={{ fontSize: 12, color: T.bright, fontWeight: 500 }}>Grounded Agent</div>
             <div style={{ fontSize: 10, color: T.dim, marginTop: 2 }}>
               Retrieve resume evidence, draft a grounded letter, and return citations.
             </div>
@@ -54,7 +54,7 @@ export default function AgentApplyPanel({ jobId }) {
               padding: "8px 18px",
             }}
           >
-            <Icon d={ICONS.zap} size={12} /> Run Agent
+            <Icon d={ICONS.zap} size={12} /> Draft Letter
           </button>
         </div>
       </div>

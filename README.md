@@ -151,9 +151,9 @@ Outputs are written to `evals/results/<timestamp>/`:
 - `summary.md`
 - `summary.json`
 
-Seed labels live in `evals/dataset.jsonl`. The file includes 30 examples: 15 labelled and 15 explicit TODOs for adding ground-truth relevance labels.
+Seed labels live in `evals/dataset.jsonl`. The file includes 30 examples: 15 labelled and 15 explicit TODOs for adding ground-truth relevance labels. Labels are tied to the active resume chunk IDs; after uploading a new resume, relabel the dataset for that resume fingerprint before treating the metrics as valid. The harness fails fast when labelled chunk IDs are stale. Use `--allow-stale-labels` only for debugging.
 
-Baseline local run with hosted LLM judging disabled and the local dense embedding model available:
+Historical baseline from the original seed resume, with hosted LLM judging disabled and the local dense embedding model available:
 
 | Method | Queries | Precision@k | Recall@k | MRR | nDCG |
 |---|---:|---:|---:|---:|---:|
@@ -173,7 +173,7 @@ The hybrid row improves because RRF combines dense semantic matches with the exa
 
 ```bash
 pytest
-python -m evals.run --generation-limit 2
+python -m evals.run --generation-limit 2 --allow-stale-labels  # smoke only if labels are stale
 ```
 
 The focused unit tests cover RRF fusion and the grounding guard. The eval command validates the end-to-end retrieval/generation harness.

@@ -10,21 +10,29 @@ Scoring breakdown:
   - Location match (15%): Is the job in preferred locations?
 """
 
+import hashlib
 import re
 
 try:
+    from .database import get_cached_job_scores, save_job_scores
     from .hybrid_retriever import get_retriever, reload_retriever
     from .profile_manager import get_active_resume_path
+    from .resume_chunks import resume_fingerprint
     from .settings import RETRIEVAL_METHOD
 except ImportError:  # pragma: no cover - supports FastAPI's top-level imports
     try:
+        from database import get_cached_job_scores, save_job_scores
         from hybrid_retriever import get_retriever, reload_retriever
         from profile_manager import get_active_resume_path
+        from resume_chunks import resume_fingerprint
         from settings import RETRIEVAL_METHOD
     except Exception:  # keeps legacy scoring available
+        get_cached_job_scores = None
+        save_job_scores = None
         get_retriever = None
         get_active_resume_path = None
         reload_retriever = None
+        resume_fingerprint = None
         RETRIEVAL_METHOD = "hybrid"
 
 
@@ -139,7 +147,10 @@ def _extract_skills(text: str) -> set:
 def _estimate_experience(text: str) -> float:
     """Estimate years of experience from resume text."""
     # Look for explicit mentions
-    match = re.search(r'(\d+)\+?\s*years?\s*(?:of\s+)?(?:production\s+)?experience', text)
+    match = re.search(
+        r'(\d+)\+?\s*years?\s*(?:(?:of\s+)?(?:production\s+)?experience|building|developing|working|in|as|with)',
+        text,
+    )
     if match:
         return float(match.group(1))
 
@@ -206,6 +217,7 @@ def _detect_locations(text: str) -> set:
 # ═══════════════════════════════════════════════════════════
 
 _profile_cache = None
+SCORING_VERSION = "match_v2"
 
 def get_profile() -> dict:
     """Get cached profile (parsed once)."""
@@ -237,15 +249,15 @@ def score_job(job: dict) -> int:
 
     Falls back to the original heuristic scorer if retrieval is unavailable.
     """
+    legacy_score = _legacy_score_job(job)
+    retrieval_score = 0
     query = _job_query(job)
     if get_retriever and query:
         try:
-            score, _ = get_retriever().score_query(query, method=RETRIEVAL_METHOD)
-            if score > 0:
-                return score
+            retrieval_score, _ = get_retriever().score_query(query, method=RETRIEVAL_METHOD)
         except Exception as exc:
             print(f"[Match] Hybrid scoring failed, using legacy score: {exc}")
-    return _legacy_score_job(job)
+    return _display_match_score(job, retrieval_score, legacy_score)
 
 
 def _legacy_score_job(job: dict) -> int:
@@ -412,19 +424,59 @@ def _score_location(location: str, profile: dict) -> float:
 def score_all_jobs(jobs: list[dict]) -> list[dict]:
     """Score all jobs and add match_score field. Returns jobs with scores."""
     profile = get_profile()  # ensure loaded
+    content_hashes = {
+        str(job.get("id", "")): _job_content_hash(job)
+        for job in jobs
+        if job.get("id")
+    }
+    resume_hash = _resume_hash()
+    cached = {}
+    if get_cached_job_scores and content_hashes:
+        try:
+            cached = get_cached_job_scores(content_hashes, resume_hash, _score_cache_method())
+        except Exception as exc:
+            print(f"[Match] Score cache read skipped: {exc}")
+
+    misses = []
+    for job in jobs:
+        job_id = str(job.get("id", ""))
+        row = cached.get(job_id)
+        if row:
+            job["match_score"] = int(row.get("score", 0))
+            job["retrieval_score"] = int(row.get("retrieval_score", 0))
+            job["legacy_score"] = int(row.get("legacy_score", 0))
+            continue
+        misses.append(job)
+
+    if not misses:
+        return jobs
 
     if get_retriever:
         try:
-            queries = [_job_query(job) for job in jobs]
+            queries = [_job_query(job) for job in misses]
             scores = get_retriever().score_queries(queries, method=RETRIEVAL_METHOD)
-            for job, (score, _) in zip(jobs, scores):
-                job["match_score"] = score or _legacy_score_job(job)
+            cache_rows = []
+            for job, (retrieval_score, _) in zip(misses, scores):
+                legacy_score = _legacy_score_job(job)
+                final_score = _display_match_score(job, retrieval_score, legacy_score)
+                job["match_score"] = final_score
+                job["retrieval_score"] = retrieval_score
+                job["legacy_score"] = legacy_score
+                cache_rows.append(_score_cache_row(job, final_score, retrieval_score, legacy_score, resume_hash))
+            _save_score_cache(cache_rows)
             return jobs
         except Exception as exc:
             print(f"[Match] Batch hybrid scoring failed, using legacy scores: {exc}")
 
-    for job in jobs:
-        job["match_score"] = score_job(job)
+    cache_rows = []
+    for job in misses:
+        legacy_score = _legacy_score_job(job)
+        final_score = _display_match_score(job, 0, legacy_score)
+        job["match_score"] = final_score
+        job["retrieval_score"] = 0
+        job["legacy_score"] = legacy_score
+        cache_rows.append(_score_cache_row(job, final_score, 0, legacy_score, resume_hash))
+    _save_score_cache(cache_rows)
 
     return jobs
 
@@ -452,11 +504,16 @@ def get_score_breakdown(job: dict) -> dict:
         except Exception as exc:
             retrieval_error = str(exc)
 
+    legacy_score = _legacy_score_job(job)
+    role_cap = _role_cap(job, profile)
+    total_score = _display_match_score(job, retrieval_score, legacy_score)
+
     return {
-        "total_score": retrieval_score or _legacy_score_job(job),
+        "total_score": total_score,
         "method": RETRIEVAL_METHOD,
         "retrieval_score": retrieval_score,
-        "legacy_score": _legacy_score_job(job),
+        "legacy_score": legacy_score,
+        "role_cap": role_cap,
         "retrieval_error": retrieval_error,
         "evidence": [result.as_dict() for result in retrieval_results],
         "skills_score": round(_score_skills(text, profile)),
@@ -483,3 +540,107 @@ def _job_query(job: dict) -> str:
         job.get("description_snippet", ""),
     ]
     return "\n".join(str(part) for part in parts if part)[:4000]
+
+
+def _display_match_score(job: dict, retrieval_score: int, legacy_score: int) -> int:
+    """
+    User-facing score.
+
+    Retrieval scores are good for evidence ranking but are not calibrated as a
+    percentage, especially when dense embeddings are unavailable and hybrid
+    falls back to sparse TF-IDF over long job descriptions. Keep retrieval as a
+    signal, but do not let it collapse an otherwise strong heuristic match.
+    """
+    profile = get_profile()
+    score = max(int(retrieval_score or 0), int(legacy_score or 0))
+    return max(0, min(_role_cap(job, profile), score))
+
+
+NON_TECH_ROLE_KEYWORDS = [
+    "account executive", "sales", "business development", "partnership",
+    "community manager", "advocate", "marketing", "recruiter", "talent",
+    "people partner", "legal", "counsel", "finance", "deal desk",
+    "customer success", "support manager",
+]
+
+TECHNICAL_TITLE_HINTS = [
+    "engineer", "developer", "scientist", "research", "architect",
+    "sre", "devops", "programmer", "analyst", "security",
+]
+
+SENIOR_TITLE_KEYWORDS = [
+    "senior", "sr.", "principal", "staff", "lead", "manager",
+    "director", "head of", "vp ", "chief",
+]
+
+
+def _role_cap(job: dict, profile: dict) -> int:
+    title = (job.get("title", "") or "").lower()
+    if not title:
+        return 100
+
+    has_technical_hint = any(keyword in title for keyword in TECHNICAL_TITLE_HINTS)
+    if any(keyword in title for keyword in NON_TECH_ROLE_KEYWORDS) and not has_technical_hint:
+        return 35
+
+    years = float(profile.get("years_experience", 0) or 0)
+    if years < 3 and any(keyword in title for keyword in SENIOR_TITLE_KEYWORDS):
+        if any(keyword in title for keyword in ["manager", "director", "head of", "vp ", "chief"]):
+            return 35
+        return 45
+
+    return 100
+
+
+def _resume_hash() -> str:
+    if resume_fingerprint:
+        try:
+            return resume_fingerprint()
+        except Exception:
+            pass
+    return "unknown"
+
+
+def _job_content_hash(job: dict) -> str:
+    parts = [
+        job.get("title", ""),
+        job.get("company", ""),
+        job.get("location", ""),
+        job.get("category", ""),
+        job.get("job_type", ""),
+        job.get("full_description", ""),
+        job.get("description_snippet", ""),
+    ]
+    return hashlib.sha1("\n".join(str(part) for part in parts).encode("utf-8")).hexdigest()
+
+
+def _score_cache_row(
+    job: dict,
+    score: int,
+    retrieval_score: int,
+    legacy_score: int,
+    resume_hash: str,
+) -> dict:
+    return {
+        "job_id": str(job.get("id", "")),
+        "content_hash": _job_content_hash(job),
+        "resume_hash": resume_hash,
+        "retrieval_method": _score_cache_method(),
+        "score": score,
+        "retrieval_score": retrieval_score,
+        "legacy_score": legacy_score,
+        "role_cap": _role_cap(job, get_profile()),
+    }
+
+
+def _save_score_cache(rows: list[dict]) -> None:
+    if not save_job_scores or not rows:
+        return
+    try:
+        save_job_scores(rows)
+    except Exception as exc:
+        print(f"[Match] Score cache write skipped: {exc}")
+
+
+def _score_cache_method() -> str:
+    return f"{RETRIEVAL_METHOD}:{SCORING_VERSION}"

@@ -1,5 +1,6 @@
 # Scrapers / HTTP
 requests==2.34.2
+beautifulsoup4==4.14.3
 
 # Server
 fastapi==0.136.3

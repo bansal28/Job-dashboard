@@ -102,9 +102,9 @@ export default function ApplyPanel({ jobId, company, jobData = null }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon d={ICONS.zap} size={15} style={{ color: T.cyan }} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, color: T.bright, fontWeight: 500 }}>Smart Apply</div>
+            <div style={{ fontSize: 12, color: T.bright, fontWeight: 500 }}>LaTeX Apply</div>
             <div style={{ fontSize: 10, color: T.dim, marginTop: 2 }}>
-              Extract JD keywords, generate tailored resume &amp; cover letter LaTeX
+              Legacy flow: extract JD keywords and generate resume / cover letter LaTeX.
             </div>
           </div>
           <button
@@ -118,7 +118,7 @@ export default function ApplyPanel({ jobId, company, jobData = null }) {
               padding: "8px 18px",
             }}
           >
-            <Icon d={ICONS.zap} size={12} /> Generate Application
+            <Icon d={ICONS.zap} size={12} /> Generate LaTeX
           </button>
         </div>
       </div>

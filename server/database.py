@@ -66,6 +66,20 @@ def init_db():
                 status TEXT DEFAULT 'running'
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS job_scores (
+                job_id TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                resume_hash TEXT NOT NULL,
+                retrieval_method TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                retrieval_score INTEGER DEFAULT 0,
+                legacy_score INTEGER DEFAULT 0,
+                role_cap INTEGER DEFAULT 100,
+                updated_at TEXT DEFAULT '',
+                PRIMARY KEY (job_id, content_hash, resume_hash, retrieval_method)
+            )
+        """)
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_dedup ON jobs(dedup_hash)")
@@ -379,6 +393,67 @@ def get_last_scrape():
     with get_db() as db:
         row = db.execute("SELECT * FROM scrape_log ORDER BY id DESC LIMIT 1").fetchone()
         return dict(row) if row else None
+
+
+def get_cached_job_scores(
+    content_hashes: dict[str, str],
+    resume_hash: str,
+    retrieval_method: str,
+) -> dict[str, dict]:
+    if not content_hashes:
+        return {}
+
+    cached: dict[str, dict] = {}
+    job_ids = list(content_hashes)
+    with get_db() as db:
+        for start in range(0, len(job_ids), 500):
+            batch = job_ids[start:start + 500]
+            placeholders = ",".join("?" for _ in batch)
+            rows = db.execute(
+                f"""
+                SELECT * FROM job_scores
+                WHERE job_id IN ({placeholders})
+                  AND resume_hash = ?
+                  AND retrieval_method = ?
+                """,
+                [*batch, resume_hash, retrieval_method],
+            ).fetchall()
+            for row in rows:
+                data = dict(row)
+                if data.get("content_hash") == content_hashes.get(data.get("job_id", "")):
+                    cached[data["job_id"]] = data
+    return cached
+
+
+def save_job_scores(rows: list[dict]) -> None:
+    if not rows:
+        return
+
+    now = datetime.now().isoformat()
+    with get_db() as db:
+        db.executemany(
+            """
+            INSERT OR REPLACE INTO job_scores
+                (job_id, content_hash, resume_hash, retrieval_method,
+                 score, retrieval_score, legacy_score, role_cap, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    row.get("job_id", ""),
+                    row.get("content_hash", ""),
+                    row.get("resume_hash", ""),
+                    row.get("retrieval_method", ""),
+                    int(row.get("score", 0)),
+                    int(row.get("retrieval_score", 0)),
+                    int(row.get("legacy_score", 0)),
+                    int(row.get("role_cap", 100)),
+                    now,
+                )
+                for row in rows
+                if row.get("job_id") and row.get("content_hash")
+            ],
+        )
 
 
 # ═══════════════════════════════════════════════════════════

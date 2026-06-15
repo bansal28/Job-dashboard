@@ -194,7 +194,7 @@ function ErrorState({ onRetry }) {
         borderRadius: 10, color: T.green, fontSize: 12, fontFamily: fontMono,
         border: `1px solid ${T.border}`,
       }}>
-        cd ~/Desktop/jobbot-claude && ./run.sh
+        cd ~/Desktop/ai\ projects/jobbot-claude && ./run.sh
       </code>
       <button onClick={onRetry} style={{
         ...buttonStyle, marginTop: 18, padding: "10px 24px",

@@ -35,7 +35,7 @@ python -c "import sys; sys.path.insert(0, 'server'); from database import init_d
 
 # Start FastAPI backend (port 8000)
 echo -e "${CYAN}→ Starting API server on :8000...${NC}"
-uvicorn server.app:app --host 0.0.0.0 --port 8000 --reload &
+uvicorn server.app:app --host 127.0.0.1 --port 8000 --reload &
 BACKEND_PID=$!
 
 # Wait for backend to be ready
