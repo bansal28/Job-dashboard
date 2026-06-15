@@ -17,14 +17,23 @@ import sys
 import argparse
 from datetime import datetime
 
+import config as local_config
 from config import (
     REED_API_KEY, ADZUNA_APP_ID, ADZUNA_APP_KEY,
-    SEARCH_QUERIES, LOCATIONS, GREENHOUSE_BOARDS,
+    SEARCH_QUERIES, LOCATIONS,
     OUTPUT_DIR, OUTPUT_CSV, MAX_RESULTS_PER_QUERY,
 )
 from reed_scraper import scrape_reed
 from adzuna_scraper import scrape_adzuna
+from greenhouse_board_registry import resolve_greenhouse_boards
 from greenhouse_scraper import DEFAULT_ROLE_CATEGORIES, ROLE_CATEGORIES, scrape_greenhouse
+
+
+GREENHOUSE_BOARDS = resolve_greenhouse_boards(
+    getattr(local_config, "GREENHOUSE_BOARDS", []),
+    getattr(local_config, "GREENHOUSE_BOARD_PRESETS", None),
+)
+GREENHOUSE_MAX_WORKERS = int(getattr(local_config, "GREENHOUSE_MAX_WORKERS", 12) or 12)
 
 
 CSV_COLUMNS = [
@@ -43,8 +52,12 @@ def run_scrapers(
     run_all = sources is None
 
     if run_all or "greenhouse" in sources:
-        print("\n🌱 Scraping Greenhouse boards...")
-        gh_jobs = scrape_greenhouse(GREENHOUSE_BOARDS, role_categories=greenhouse_role_categories)
+        print(f"\n🌱 Scraping Greenhouse boards ({len(GREENHOUSE_BOARDS)} candidates)...")
+        gh_jobs = scrape_greenhouse(
+            GREENHOUSE_BOARDS,
+            role_categories=greenhouse_role_categories,
+            max_workers=GREENHOUSE_MAX_WORKERS,
+        )
         all_jobs.extend(gh_jobs)
 
     if run_all or "reed" in sources:

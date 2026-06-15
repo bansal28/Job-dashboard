@@ -79,13 +79,29 @@ def start_scrape(req: ScrapeRequest):
         log_id = log_scrape(req.sources)
         total_found = total_new = 0
         try:
-            from config import (REED_API_KEY, ADZUNA_APP_ID, ADZUNA_APP_KEY,
-                SEARCH_QUERIES, LOCATIONS, GREENHOUSE_BOARDS, MAX_RESULTS_PER_QUERY)
+            import config as local_config
+            from greenhouse_board_registry import resolve_greenhouse_boards
+
+            REED_API_KEY = getattr(local_config, "REED_API_KEY", "")
+            ADZUNA_APP_ID = getattr(local_config, "ADZUNA_APP_ID", "")
+            ADZUNA_APP_KEY = getattr(local_config, "ADZUNA_APP_KEY", "")
+            SEARCH_QUERIES = getattr(local_config, "SEARCH_QUERIES", [])
+            LOCATIONS = getattr(local_config, "LOCATIONS", [])
+            MAX_RESULTS_PER_QUERY = getattr(local_config, "MAX_RESULTS_PER_QUERY", 50)
+            GREENHOUSE_BOARDS = resolve_greenhouse_boards(
+                getattr(local_config, "GREENHOUSE_BOARDS", []),
+                getattr(local_config, "GREENHOUSE_BOARD_PRESETS", None),
+            )
+            GREENHOUSE_MAX_WORKERS = int(getattr(local_config, "GREENHOUSE_MAX_WORKERS", 12) or 12)
 
             if "greenhouse" in req.sources:
-                scrape_state["progress"] = "Scraping Greenhouse..."
+                scrape_state["progress"] = f"Scraping Greenhouse ({len(GREENHOUSE_BOARDS)} boards)..."
                 from greenhouse_scraper import scrape_greenhouse
-                raw = scrape_greenhouse(GREENHOUSE_BOARDS, role_categories=req.role_categories)
+                raw = scrape_greenhouse(
+                    GREENHOUSE_BOARDS,
+                    role_categories=req.role_categories,
+                    max_workers=GREENHOUSE_MAX_WORKERS,
+                )
                 jobs = [enrich_job(j) for j in raw]
                 f, n = insert_jobs(jobs); total_found += f; total_new += n
 
@@ -326,10 +342,17 @@ def upcoming_deadlines():
 def get_config():
     try:
         import config as local_config
+        from greenhouse_board_registry import resolve_greenhouse_boards
         from greenhouse_scraper import get_role_category_options
+        greenhouse_boards = resolve_greenhouse_boards(
+            getattr(local_config, "GREENHOUSE_BOARDS", []),
+            getattr(local_config, "GREENHOUSE_BOARD_PRESETS", None),
+        )
         return {"queries": getattr(local_config, "SEARCH_QUERIES", []),
                 "locations": getattr(local_config, "LOCATIONS", []),
-                "greenhouse_boards": getattr(local_config, "GREENHOUSE_BOARDS", []),
+                "greenhouse_boards": greenhouse_boards,
+                "greenhouse_board_count": len(greenhouse_boards),
+                "greenhouse_board_presets": getattr(local_config, "GREENHOUSE_BOARD_PRESETS", ["europe_tech"]),
                 "greenhouse_role_categories": get_role_category_options(),
                 "default_greenhouse_role_categories": ["ai_ml"],
                 "has_reed_key": bool(get_setting("REED_API_KEY", "")),
@@ -339,6 +362,8 @@ def get_config():
                 "llm": configured_llm_label()}
     except:
         return {"queries": [], "locations": [], "greenhouse_boards": [],
+                "greenhouse_board_count": 0,
+                "greenhouse_board_presets": ["europe_tech"],
                 "greenhouse_role_categories": [],
                 "default_greenhouse_role_categories": ["ai_ml"],
                 "has_reed_key": False, "has_adzuna_key": False,

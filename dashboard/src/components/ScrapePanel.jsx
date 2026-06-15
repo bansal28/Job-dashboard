@@ -159,7 +159,16 @@ export default function ScrapePanel({ reload }) {
           marginTop: 12, padding: 14, background: "rgba(255,255,255,0.02)",
           borderRadius: 10, border: `1px solid ${T.border}`,
         }}>
-          {[["Queries", config.queries], ["Locations", config.locations], ["Greenhouse", config.greenhouse_boards]].map(([l, items]) =>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: T.dim, textTransform: "uppercase", marginBottom: 5, fontWeight: 600, letterSpacing: "0.5px" }}>
+              Greenhouse Boards
+            </div>
+            <div style={{ color: T.text, fontSize: 11, fontFamily: fontMono }}>
+              {(config.greenhouse_board_count || config.greenhouse_boards?.length || 0).toLocaleString()} candidate boards
+              {config.greenhouse_board_presets?.length ? ` · ${config.greenhouse_board_presets.join(", ")}` : ""}
+            </div>
+          </div>
+          {[["Queries", config.queries], ["Locations", config.locations], ["Board preview", config.greenhouse_boards?.slice(0, 30)]].map(([l, items]) =>
             items?.length ? (
               <div key={l} style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 10, color: T.dim, textTransform: "uppercase", marginBottom: 5, fontWeight: 600, letterSpacing: "0.5px" }}>{l}</div>

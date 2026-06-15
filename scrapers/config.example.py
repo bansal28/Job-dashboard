@@ -53,17 +53,12 @@ LOCATIONS = [
 DISTANCE_MILES = 25
 
 # ─── GREENHOUSE BOARDS ──────────────────────────────────────
-# Greenhouse's public API is board-scoped. Add board tokens here; choose
-# role categories in the dashboard or with scrapers/main.py --role-category.
+# Greenhouse's public API is board-scoped. Presets provide the large candidate
+# universe; GREENHOUSE_BOARDS is for custom additions.
+GREENHOUSE_BOARD_PRESETS = ["europe_tech"]
+GREENHOUSE_MAX_WORKERS = 12
 GREENHOUSE_BOARDS = [
-    "anthropic",
-    "deepmind",
-    "scaleai",
-    "snorkelai",
-    "databricks",
-    "thinkingmachines",
-    "wayve",
-    "stripe",
+    # Add extra board tokens here, e.g. "my-favourite-startup".
 ]
 
 # ─── OUTPUT ─────────────────────────────────────────────────

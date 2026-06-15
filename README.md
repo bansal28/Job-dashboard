@@ -80,7 +80,7 @@ Open **Profile** in the dashboard and upload a LaTeX resume source (`.tex`, `.la
 
 ## Greenhouse Setup
 
-Greenhouse scraping uses the public Job Board API and does not need an API key for job-list GET requests. The official API is scoped by company board, so the app fetches the configured boards and then filters them by the role categories selected in the dashboard. Add board tokens to `GREENHOUSE_BOARDS` in `scrapers/config.py`; the token is the company slug in a Greenhouse board URL, for example `https://boards.greenhouse.io/stripe` uses `stripe`. The scraper calls:
+Greenhouse scraping uses the public Job Board API and does not need an API key for job-list GET requests. The official API is scoped by company board, so the app fetches a large candidate board registry and then filters jobs by the role categories selected in the dashboard. The default `europe_tech` preset contains 200+ candidate board tokens across European tech companies, AI labs, and startups; any tokens you add to `GREENHOUSE_BOARDS` in `scrapers/config.py` are merged in as custom additions. The token is the company slug in a Greenhouse board URL, for example `https://boards.greenhouse.io/stripe` uses `stripe`. The scraper calls:
 
 ```text
 GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true
@@ -94,6 +94,8 @@ python main.py
 ```
 
 Use `python main.py --role-category ai_ml --role-category data_science` for multiple Greenhouse role filters. Use `python main.py --all` only when you explicitly want Reed and Adzuna too.
+
+Board registry code lives in `scrapers/greenhouse_board_registry.py`. Invalid or stale board tokens are skipped automatically when Greenhouse returns 404.
 
 ## Configuration
 
