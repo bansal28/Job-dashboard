@@ -69,13 +69,16 @@ OUTPUT_DIR = "output"
 OUTPUT_CSV = "output/jobs.csv"
 MAX_RESULTS_PER_QUERY = 50
 
-# ─── GROQ API (Smart Apply — FREE) ─────────────────────────
-# Get free key from https://console.groq.com/keys
+# ─── LLM API (Smart Apply / Agent / Evals) ─────────────────
+# Use either OpenAI or Groq. LLM_PROVIDER="auto" prefers OpenAI when both keys exist.
+OPENAI_API_KEY = ""
 GROQ_API_KEY = ""
+LLM_PROVIDER = "auto"  # auto | openai | groq
 
 # ─── RAG / AGENT SETTINGS (optional; env vars override these) ───────────────
+OPENAI_MODEL = "gpt-5.4-mini"
 GROQ_MODEL = "llama-3.3-70b-versatile"
-JUDGE_MODEL = "llama-3.3-70b-versatile"
+JUDGE_MODEL = ""  # empty uses the active provider's default model
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 EMBEDDING_FALLBACK_MODEL = "all-MiniLM-L6-v2"
 VECTOR_STORE_PATH = "data/chroma"

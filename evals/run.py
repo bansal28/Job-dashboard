@@ -18,7 +18,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Job Hunter RAG evals.")
     parser.add_argument("--k", type=int, default=5, help="Retrieval cutoff.")
     parser.add_argument("--generation-limit", type=int, default=5, help="Number of labelled examples for generation eval.")
-    parser.add_argument("--judge-backend", choices=["groq", "ragas"], default="groq")
+    parser.add_argument("--judge-backend", choices=["llm", "openai", "groq", "ragas"], default="llm")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 

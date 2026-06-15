@@ -38,7 +38,10 @@ def get_setting(name: str, default: str = "") -> str:
 
 GROQ_API_KEY = get_setting("GROQ_API_KEY", "")
 GROQ_MODEL = get_setting("GROQ_MODEL", "llama-3.3-70b-versatile")
-JUDGE_MODEL = get_setting("JUDGE_MODEL", GROQ_MODEL)
+OPENAI_API_KEY = get_setting("OPENAI_API_KEY", "")
+OPENAI_MODEL = get_setting("OPENAI_MODEL", "gpt-5.4-mini")
+LLM_PROVIDER = get_setting("LLM_PROVIDER", "auto")
+JUDGE_MODEL = get_setting("JUDGE_MODEL", "") or (OPENAI_MODEL if OPENAI_API_KEY else GROQ_MODEL)
 
 EMBEDDING_MODEL = get_setting("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 EMBEDDING_FALLBACK_MODEL = get_setting("EMBEDDING_FALLBACK_MODEL", "all-MiniLM-L6-v2")

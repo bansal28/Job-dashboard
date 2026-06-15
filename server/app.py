@@ -1,7 +1,7 @@
 """
 Job Hunter API Server
 """
-import sys, os, threading
+import sys, threading
 from pathlib import Path
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
@@ -20,7 +20,9 @@ from database import (init_db, insert_jobs, get_jobs, update_job, add_manual_job
     add_task, get_tasks, update_task, complete_task_by_company, get_tasks_summary)
 from categorizer import enrich_job
 from apply_engine import generate_application
+from llm_client import configured_llm_label, has_llm_key
 from match_engine import score_all_jobs, get_score_breakdown, reload_profile
+from settings import get_setting
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -279,10 +281,20 @@ def upcoming_deadlines():
 @app.get("/api/config")
 def get_config():
     try:
-        from config import SEARCH_QUERIES, LOCATIONS, GREENHOUSE_BOARDS, REED_API_KEY, ADZUNA_APP_ID
-        return {"queries": SEARCH_QUERIES, "locations": LOCATIONS, "greenhouse_boards": GREENHOUSE_BOARDS,
-                "has_reed_key": bool(REED_API_KEY), "has_adzuna_key": bool(ADZUNA_APP_ID)}
-    except: return {"queries":[],"locations":[],"greenhouse_boards":[],"has_reed_key":False,"has_adzuna_key":False}
+        import config as local_config
+        return {"queries": getattr(local_config, "SEARCH_QUERIES", []),
+                "locations": getattr(local_config, "LOCATIONS", []),
+                "greenhouse_boards": getattr(local_config, "GREENHOUSE_BOARDS", []),
+                "has_reed_key": bool(get_setting("REED_API_KEY", "")),
+                "has_adzuna_key": bool(get_setting("ADZUNA_APP_ID", "")),
+                "has_groq_key": bool(get_setting("GROQ_API_KEY", "")),
+                "has_openai_key": bool(get_setting("OPENAI_API_KEY", "")),
+                "llm": configured_llm_label()}
+    except:
+        return {"queries": [], "locations": [], "greenhouse_boards": [],
+                "has_reed_key": False, "has_adzuna_key": False,
+                "has_groq_key": False, "has_openai_key": False,
+                "llm": configured_llm_label()}
 
 # ── Recategorize existing jobs ──
 @app.post("/api/recategorize")
@@ -355,20 +367,14 @@ def start_apply_direct(job: dict):
 
 def _run_apply(key: str, job: dict):
     """Shared apply logic for both DB and direct jobs."""
-    try:
-        from config import GROQ_API_KEY
-        api_key = GROQ_API_KEY
-    except (ImportError, AttributeError):
-        api_key = os.environ.get("GROQ_API_KEY", "")
-
-    if not api_key:
-        raise HTTPException(400, "No GROQ_API_KEY configured. Add it to scrapers/config.py")
+    if not has_llm_key():
+        raise HTTPException(400, "No LLM API key configured. Add OPENAI_API_KEY or GROQ_API_KEY to scrapers/config.py")
 
     apply_state[key] = {"status": "generating", "result": None}
 
     def run():
         try:
-            result = generate_application(job, api_key)
+            result = generate_application(job)
             apply_state[key] = {"status": "done", "result": result}
         except Exception as e:
             apply_state[key] = {"status": "error", "result": {"error": str(e)}}
@@ -406,7 +412,7 @@ def scan_emails(days: int = 30):
         return {"status": "running"}
 
     try:
-        from config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD, GROQ_API_KEY
+        from config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD
     except (ImportError, AttributeError):
         raise HTTPException(400, "Gmail credentials not configured in scrapers/config.py")
 
@@ -422,8 +428,8 @@ def scan_emails(days: int = 30):
             emails = fetch_emails(GMAIL_ADDRESS, GMAIL_APP_PASSWORD, days=days)
             print(f"[Gmail] Fetched {len(emails)} emails from last {days} days")
 
-            if emails and GROQ_API_KEY:
-                classified = classify_emails_batch(emails, GROQ_API_KEY)
+            if emails and has_llm_key():
+                classified = classify_emails_batch(emails)
                 job_emails = [e for e in classified if e.get("is_job_related")]
                 print(f"[Gmail] {len(job_emails)} job-related out of {len(classified)} total")
 

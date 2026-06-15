@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 
+from server.llm_client import call_llm
 from server.resume_chunks import load_resume_chunks
-from server.settings import GROQ_API_KEY, JUDGE_MODEL
+from server.settings import get_setting
 
 from .schema import RetrievalExample
 
@@ -22,7 +22,7 @@ Rubric:
 Return only valid JSON with keys: claims, unsupported_claims, faithfulness_score, jd_relevance_score, rationale."""
 
 
-def evaluate_generation(examples: list[RetrievalExample], limit: int = 5, backend: str = "groq") -> list[dict]:
+def evaluate_generation(examples: list[RetrievalExample], limit: int = 5, backend: str = "llm") -> list[dict]:
     labelled = examples[:limit]
     results = []
     resume_text = "\n".join(chunk.text for chunk in load_resume_chunks())
@@ -67,24 +67,19 @@ def evaluate_generation(examples: list[RetrievalExample], limit: int = 5, backen
     return results
 
 
-def judge_cover_letter(letter: str, resume_text: str, requirements: list[str], backend: str = "groq") -> dict:
+def judge_cover_letter(letter: str, resume_text: str, requirements: list[str], backend: str = "llm") -> dict:
     if backend == "ragas":
         ragas_result = _try_ragas(letter, resume_text, requirements)
         if ragas_result:
             return ragas_result
 
-    api_key = GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")
-    if api_key:
-        try:
-            return _judge_with_groq(letter, resume_text, requirements, api_key)
-        except Exception as exc:
-            heuristic = _judge_heuristically(letter, resume_text, requirements)
-            heuristic["judge_error"] = str(exc)
-            return heuristic
-
-    heuristic = _judge_heuristically(letter, resume_text, requirements)
-    heuristic["judge_skipped"] = "No GROQ_API_KEY configured; used deterministic lexical judge."
-    return heuristic
+    provider = None if backend == "llm" else backend
+    try:
+        return _judge_with_llm(letter, resume_text, requirements, provider=provider)
+    except Exception as exc:
+        heuristic = _judge_heuristically(letter, resume_text, requirements)
+        heuristic["judge_error"] = str(exc)
+        return heuristic
 
 
 def write_generation_results(results: list[dict], output_dir: Path) -> Path:
@@ -94,9 +89,8 @@ def write_generation_results(results: list[dict], output_dir: Path) -> Path:
     return path
 
 
-def _judge_with_groq(letter: str, resume_text: str, requirements: list[str], api_key: str) -> dict:
-    import requests
-
+def _judge_with_llm(letter: str, resume_text: str, requirements: list[str], provider: str | None = None) -> dict:
+    judge_model = get_setting("JUDGE_MODEL", "") or None
     prompt = f"""Resume evidence:
 {resume_text[:7000]}
 
@@ -107,29 +101,21 @@ Cover letter:
 {letter}
 
 Apply the rubric and return JSON only."""
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": JUDGE_MODEL,
-            "temperature": 0,
-            "max_tokens": 1800,
-            "messages": [
-                {"role": "system", "content": JUDGE_RUBRIC},
-                {"role": "user", "content": prompt},
-            ],
-        },
-        timeout=90,
-    )
-    response.raise_for_status()
-    raw = response.json()["choices"][0]["message"]["content"].strip()
+    raw = call_llm(
+        JUDGE_RUBRIC,
+        prompt,
+        max_tokens=1800,
+        temperature=0,
+        model=judge_model,
+        provider=provider,
+    ).strip()
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
     if raw.endswith("```"):
         raw = raw[:-3]
     parsed = json.loads(raw.strip())
-    parsed["judge_backend"] = "groq"
-    parsed["judge_model"] = JUDGE_MODEL
+    parsed["judge_backend"] = provider or "llm"
+    parsed["judge_model"] = judge_model or "provider-default"
     return parsed
 
 
@@ -158,7 +144,7 @@ def _judge_heuristically(letter: str, resume_text: str, requirements: list[str])
         "faithfulness_score": round(faithfulness, 4),
         "jd_relevance_score": round(relevance, 4),
         "judge_backend": "heuristic",
-        "rationale": "Lexical overlap fallback; configure GROQ_API_KEY for LLM-as-judge.",
+        "rationale": "Lexical overlap fallback; configure OPENAI_API_KEY or GROQ_API_KEY for LLM-as-judge.",
     }
 
 

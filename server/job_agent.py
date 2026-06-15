@@ -9,7 +9,6 @@ citations.
 from __future__ import annotations
 
 import json
-import os
 import re
 from typing import Any, TypedDict
 
@@ -21,7 +20,8 @@ try:
         score_match,
     )
     from .grounding import enforce_grounding
-    from .settings import GROQ_API_KEY, GROQ_MODEL, RETRIEVAL_K
+    from .llm_client import call_llm, has_llm_key
+    from .settings import RETRIEVAL_K
 except ImportError:  # pragma: no cover
     from agent_tools import (
         check_application_status,
@@ -30,7 +30,8 @@ except ImportError:  # pragma: no cover
         score_match,
     )
     from grounding import enforce_grounding
-    from settings import GROQ_API_KEY, GROQ_MODEL, RETRIEVAL_K
+    from llm_client import call_llm, has_llm_key
+    from settings import RETRIEVAL_K
 
 
 class ApplyAgentState(TypedDict, total=False):
@@ -183,12 +184,11 @@ def _guard_route(state: ApplyAgentState) -> str:
 
 
 def _extract_requirements(jd: str, title: str) -> list[str]:
-    api_key = GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")
-    if api_key:
+    if has_llm_key():
         system = "Extract concise job requirements. Return only a JSON array of strings."
         prompt = f"Job title: {title}\n\nJob description:\n{jd[:5000]}\n\nReturn 5-8 key requirements as JSON strings."
         try:
-            raw = _call_model(system, prompt, api_key, max_tokens=900)
+            raw = _call_model(system, prompt, max_tokens=900)
             parsed = _parse_json_array(raw)
             if parsed:
                 return parsed[:8]
@@ -227,8 +227,7 @@ def _draft_grounded_letter(
     evidence: list[dict],
     unsupported_claims: list[str] | None = None,
 ) -> str:
-    api_key = GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")
-    if not api_key:
+    if not has_llm_key():
         return _template_letter(job, requirements, evidence)
 
     evidence_block = "\n".join(
@@ -258,50 +257,13 @@ Resume evidence:
 Write the grounded cover letter."""
 
     try:
-        return _call_model(system, prompt, api_key, max_tokens=1400).strip()
+        return _call_model(system, prompt, max_tokens=1400).strip()
     except Exception:
         return _template_letter(job, requirements, evidence)
 
 
-def _call_model(system_prompt: str, user_prompt: str, api_key: str, max_tokens: int = 1400) -> str:
-    try:
-        from langchain_groq import ChatGroq  # type: ignore
-        from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
-
-        llm = ChatGroq(
-            groq_api_key=api_key,
-            model=GROQ_MODEL,
-            temperature=0.2,
-            max_tokens=max_tokens,
-        )
-        response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
-        return str(response.content)
-    except Exception:
-        return _call_groq_http(system_prompt, user_prompt, api_key, max_tokens=max_tokens)
-
-
-def _call_groq_http(system_prompt: str, user_prompt: str, api_key: str, max_tokens: int = 1400) -> str:
-    import requests
-
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": GROQ_MODEL,
-            "max_tokens": max_tokens,
-            "temperature": 0.2,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        },
-        timeout=120,
-    )
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+def _call_model(system_prompt: str, user_prompt: str, max_tokens: int = 1400) -> str:
+    return call_llm(system_prompt, user_prompt, max_tokens=max_tokens, temperature=0.2)
 
 
 def _template_letter(job: dict, requirements: list[str], evidence: list[dict]) -> str:

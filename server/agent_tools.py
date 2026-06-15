@@ -4,21 +4,20 @@ Tool functions used by the application agent.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 
 try:
     from .database import get_jobs
     from .gmail_tracker import classify_emails_batch, fetch_emails
     from .hybrid_retriever import get_retriever
+    from .llm_client import has_llm_key
     from .match_engine import get_score_breakdown
-    from .settings import GROQ_API_KEY
 except ImportError:  # pragma: no cover
     from database import get_jobs
     from gmail_tracker import classify_emails_batch, fetch_emails
     from hybrid_retriever import get_retriever
+    from llm_client import has_llm_key
     from match_engine import get_score_breakdown
-    from settings import GROQ_API_KEY
 
 
 def get_job(job_id: str) -> dict:
@@ -64,10 +63,9 @@ def check_application_status(company_or_email: str, days: int = 30) -> dict:
     if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
         return {"configured": False, "matches": [], "error": "Gmail credentials are not configured"}
 
-    api_key = GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")
     emails = fetch_emails(GMAIL_ADDRESS, GMAIL_APP_PASSWORD, days=days)
-    if api_key:
-        emails = classify_emails_batch(emails, api_key)
+    if has_llm_key():
+        emails = classify_emails_batch(emails)
 
     needle = company_or_email.lower().strip()
     matches = [

@@ -22,4 +22,4 @@ The chunker uses one resume bullet, skill line, education line, or project bulle
 
 ## Judge Model
 
-The default judge is the same configurable Groq Llama 3.3 70B model used elsewhere, which keeps the stack simple and avoids another paid provider. The tradeoff is judge/model correlation with the generator; the harness isolates the judge prompt and `JUDGE_MODEL` so a different evaluator can be swapped in later.
+The judge uses the same configurable LLM provider path as generation: OpenAI when `OPENAI_API_KEY` is configured, otherwise Groq when `GROQ_API_KEY` is configured. The tradeoff is possible judge/model correlation with the generator; the harness isolates the judge prompt and `JUDGE_MODEL` so a different evaluator can be forced for independent scoring.

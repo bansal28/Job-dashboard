@@ -1,7 +1,7 @@
 """
 Gmail Application Tracker
 Connects to Gmail via IMAP, fetches recent emails,
-classifies them using Groq LLM into application status categories.
+classifies them using the configured LLM into application status categories.
 
 Setup:
   1. Enable IMAP in Gmail: Settings > Forwarding and POP/IMAP > Enable IMAP
@@ -19,6 +19,11 @@ import json
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta
+
+try:
+    from .llm_client import call_llm, has_llm_key
+except ImportError:  # pragma: no cover
+    from llm_client import call_llm, has_llm_key
 
 
 # ═══════════════════════════════════════════════════════════
@@ -157,16 +162,19 @@ def _decode_header_value(value: str) -> str:
 # LLM CLASSIFICATION
 # ═══════════════════════════════════════════════════════════
 
-def classify_emails_batch(emails: list[dict], api_key: str) -> list[dict]:
+def classify_emails_batch(emails: list[dict], api_key: str | None = None) -> list[dict]:
     """
-    Classify a batch of emails using Groq LLM.
+    Classify a batch of emails using the configured LLM.
     Much more accurate than keyword matching.
     Processes in batches of 10 for efficiency.
     """
-    import requests
-
     if not emails:
         return []
+    if not api_key and not has_llm_key():
+        return [
+            {**em, "is_job_related": True, "category": "unknown", "company": "", "ai_summary": "LLM key not configured"}
+            for em in emails
+        ]
 
     results = []
     batch_size = 10
@@ -179,10 +187,8 @@ def classify_emails_batch(emails: list[dict], api_key: str) -> list[dict]:
     return results
 
 
-def _classify_batch(emails: list[dict], api_key: str) -> list[dict]:
+def _classify_batch(emails: list[dict], api_key: str | None = None) -> list[dict]:
     """Classify a batch of emails with one LLM call."""
-    import requests
-
     # Build email summaries for the prompt
     email_summaries = []
     for idx, em in enumerate(emails):
@@ -213,25 +219,7 @@ For non-job emails, use: {"index": 1, "is_job_related": false, "category": "not_
     prompt += "\n\nReturn ONLY the JSON array. No other text."
 
     try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "llama-3.3-70b-versatile",
-                "max_tokens": 2000,
-                "temperature": 0.1,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        result_text = response.json()["choices"][0]["message"]["content"]
+        result_text = call_llm(system, prompt, max_tokens=2000, temperature=0.1, api_key=api_key)
 
         # Parse JSON
         result_text = result_text.strip()

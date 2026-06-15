@@ -4,16 +4,20 @@ Smart Apply Engine
 2. Extracts keywords from it
 3. Generates tailored resume + cover letter LaTeX
 
-Uses Groq API with Llama 3.3 70B (free tier).
+Uses the configured LLM provider: OpenAI or Groq.
 """
 
-import os
 import json
 import re
 import requests
 from pathlib import Path
 from datetime import datetime
 from html import unescape
+
+try:
+    from .llm_client import call_llm, has_llm_key
+except ImportError:  # pragma: no cover
+    from llm_client import call_llm, has_llm_key
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 RESUME_TEMPLATE = TEMPLATES_DIR / "resume_base.tex"
@@ -143,7 +147,7 @@ def _strip_html(html_str: str) -> str:
 # MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════
 
-def generate_application(job: dict, api_key: str) -> dict:
+def generate_application(job: dict, api_key: str = "") -> dict:
     """
     Main entry point.
     1. Fetches full JD from URL
@@ -152,8 +156,8 @@ def generate_application(job: dict, api_key: str) -> dict:
     4. Generates cover letter
     Returns dict with all results.
     """
-    if not api_key:
-        return {"error": "No GROQ_API_KEY configured. Get one free at console.groq.com/keys and add to scrapers/config.py"}
+    if not api_key and not has_llm_key():
+        return {"error": "No LLM API key configured. Add OPENAI_API_KEY or GROQ_API_KEY to scrapers/config.py"}
 
     resume_base = load_template(RESUME_TEMPLATE)
     cover_base = load_template(COVER_LETTER_TEMPLATE)
@@ -206,32 +210,15 @@ def generate_application(job: dict, api_key: str) -> dict:
 # LLM CALL
 # ═══════════════════════════════════════════════════════════
 
-def _call_llm(system_prompt: str, user_prompt: str, api_key: str, max_tokens: int = 4096) -> str:
-    """Call Groq API (free tier, very fast). Returns text response or raises on error."""
-    response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": "llama-3.3-70b-versatile",
-            "max_tokens": max_tokens,
-            "temperature": 0.3,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        },
-        timeout=120,
+def _call_llm(system_prompt: str, user_prompt: str, api_key: str = "", max_tokens: int = 4096) -> str:
+    """Call the configured LLM provider. api_key is kept for legacy Groq callers."""
+    return call_llm(
+        system_prompt,
+        user_prompt,
+        max_tokens=max_tokens,
+        temperature=0.3,
+        api_key=api_key or None,
     )
-
-    if response.status_code != 200:
-        error_detail = response.text[:500]
-        raise Exception(f"Groq API error {response.status_code}: {error_detail}")
-
-    data = response.json()
-    return data["choices"][0]["message"]["content"]
 
 
 # ═══════════════════════════════════════════════════════════
