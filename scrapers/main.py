@@ -3,7 +3,8 @@ Job Hunter — Main Scraper
 Runs all configured scrapers and outputs a unified CSV.
 
 Usage:
-    python main.py                  # Run all scrapers
+    python main.py                  # Run Greenhouse only
+    python main.py --all            # Run all scrapers
     python main.py --greenhouse     # Run only Greenhouse (no API key needed!)
     python main.py --reed           # Run only Reed
     python main.py --adzuna         # Run only Adzuna
@@ -100,6 +101,7 @@ def save_csv(jobs: list[dict], filepath: str, append: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(description="Job Hunter Scraper")
+    parser.add_argument("--all", action="store_true", help="Run all configured scrapers")
     parser.add_argument("--greenhouse", action="store_true", help="Scrape Greenhouse only")
     parser.add_argument("--reed", action="store_true", help="Scrape Reed only")
     parser.add_argument("--adzuna", action="store_true", help="Scrape Adzuna only")
@@ -115,8 +117,10 @@ def main():
     if args.adzuna:
         sources.append("adzuna")
 
-    if not sources:
+    if args.all:
         sources = None  # run all
+    elif not sources:
+        sources = ["greenhouse"]
 
     print("=" * 60)
     print(f"  Job Hunter Scraper — {datetime.now().strftime('%Y-%m-%d %H:%M')}")

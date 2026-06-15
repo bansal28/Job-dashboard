@@ -4,7 +4,7 @@ Job Hunter is a local-first application tracker that now combines scraping, Gmai
 
 ## What It Does
 
-- Scrapes jobs from Reed, Adzuna, Greenhouse, Gradcracker, and Otta/WTTJ into SQLite.
+- Scrapes jobs from Greenhouse by default, with Reed, Adzuna, Gradcracker, and Otta/WTTJ still available as optional sources.
 - Lets each local user upload their own resume profile, with a `.tex` source used for RAG and generation.
 - Scores jobs against the resume with hybrid retrieval: dense Chroma vectors plus a from-scratch TF-IDF sparse retriever fused by RRF.
 - Runs an apply agent that extracts JD requirements, retrieves resume evidence, drafts a cover letter, and returns exact cited resume chunks.
@@ -77,6 +77,23 @@ API docs: `http://localhost:8000/docs`
 ## Resume Profile
 
 Open **Profile** in the dashboard and upload a LaTeX resume source (`.tex`, `.latex`, or `.txt`). That uploaded source is stored locally in `data/profile/active_resume.tex` and becomes the active input for chunking, hybrid retrieval, match scoring, Smart Apply, the LangGraph apply agent, and evals. You can also attach the original resume file (`.pdf`, `.doc`, `.docx`, or `.tex`) for profile storage; the `.tex` source is what powers RAG.
+
+## Greenhouse Setup
+
+Greenhouse scraping uses the public Job Board API and does not need an API key for job-list GET requests. Add company board tokens to `GREENHOUSE_BOARDS` in `scrapers/config.py`; the token is the company slug in a Greenhouse board URL, for example `https://boards.greenhouse.io/stripe` uses `stripe`. The scraper calls:
+
+```text
+GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true
+```
+
+`content=true` is important because it returns the full job description, departments, and offices in one response. Run Greenhouse-only with the dashboard's default **Greenhouse** source, or from CLI with:
+
+```bash
+cd scrapers
+python main.py
+```
+
+Use `python main.py --all` only when you explicitly want Reed and Adzuna too.
 
 ## Configuration
 

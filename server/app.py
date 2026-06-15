@@ -38,7 +38,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 scrape_state = {"running": False, "progress": "", "log_id": None}
 
 class ScrapeRequest(BaseModel):
-    sources: list[str] = ["greenhouse", "reed", "adzuna"]
+    sources: list[str] = ["greenhouse"]
 
 class JobUpdate(BaseModel):
     status: str | None = None
