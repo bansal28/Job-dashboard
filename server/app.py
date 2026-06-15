@@ -39,6 +39,7 @@ scrape_state = {"running": False, "progress": "", "log_id": None}
 
 class ScrapeRequest(BaseModel):
     sources: list[str] = ["greenhouse"]
+    role_categories: list[str] = ["ai_ml"]
 
 class JobUpdate(BaseModel):
     status: str | None = None
@@ -84,7 +85,7 @@ def start_scrape(req: ScrapeRequest):
             if "greenhouse" in req.sources:
                 scrape_state["progress"] = "Scraping Greenhouse..."
                 from greenhouse_scraper import scrape_greenhouse
-                raw = scrape_greenhouse(GREENHOUSE_BOARDS)
+                raw = scrape_greenhouse(GREENHOUSE_BOARDS, role_categories=req.role_categories)
                 jobs = [enrich_job(j) for j in raw]
                 f, n = insert_jobs(jobs); total_found += f; total_new += n
 
@@ -325,9 +326,12 @@ def upcoming_deadlines():
 def get_config():
     try:
         import config as local_config
+        from greenhouse_scraper import get_role_category_options
         return {"queries": getattr(local_config, "SEARCH_QUERIES", []),
                 "locations": getattr(local_config, "LOCATIONS", []),
                 "greenhouse_boards": getattr(local_config, "GREENHOUSE_BOARDS", []),
+                "greenhouse_role_categories": get_role_category_options(),
+                "default_greenhouse_role_categories": ["ai_ml"],
                 "has_reed_key": bool(get_setting("REED_API_KEY", "")),
                 "has_adzuna_key": bool(get_setting("ADZUNA_APP_ID", "")),
                 "has_groq_key": bool(get_setting("GROQ_API_KEY", "")),
@@ -335,6 +339,8 @@ def get_config():
                 "llm": configured_llm_label()}
     except:
         return {"queries": [], "locations": [], "greenhouse_boards": [],
+                "greenhouse_role_categories": [],
+                "default_greenhouse_role_categories": ["ai_ml"],
                 "has_reed_key": False, "has_adzuna_key": False,
                 "has_groq_key": False, "has_openai_key": False,
                 "llm": configured_llm_label()}

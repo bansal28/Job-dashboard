@@ -80,20 +80,20 @@ Open **Profile** in the dashboard and upload a LaTeX resume source (`.tex`, `.la
 
 ## Greenhouse Setup
 
-Greenhouse scraping uses the public Job Board API and does not need an API key for job-list GET requests. Add company board tokens to `GREENHOUSE_BOARDS` in `scrapers/config.py`; the token is the company slug in a Greenhouse board URL, for example `https://boards.greenhouse.io/stripe` uses `stripe`. The scraper calls:
+Greenhouse scraping uses the public Job Board API and does not need an API key for job-list GET requests. The official API is scoped by company board, so the app fetches the configured boards and then filters them by the role categories selected in the dashboard. Add board tokens to `GREENHOUSE_BOARDS` in `scrapers/config.py`; the token is the company slug in a Greenhouse board URL, for example `https://boards.greenhouse.io/stripe` uses `stripe`. The scraper calls:
 
 ```text
 GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true
 ```
 
-`content=true` is important because it returns the full job description, departments, and offices in one response. Run Greenhouse-only with the dashboard's default **Greenhouse** source, or from CLI with:
+`content=true` is important because it returns the full job description, departments, and offices in one response. The dashboard defaults to **AI / ML** roles; select more role categories before scraping to broaden results. Run Greenhouse-only from CLI with:
 
 ```bash
 cd scrapers
 python main.py
 ```
 
-Use `python main.py --all` only when you explicitly want Reed and Adzuna too.
+Use `python main.py --role-category ai_ml --role-category data_science` for multiple Greenhouse role filters. Use `python main.py --all` only when you explicitly want Reed and Adzuna too.
 
 ## Configuration
 

@@ -5,6 +5,7 @@ Runs all configured scrapers and outputs a unified CSV.
 Usage:
     python main.py                  # Run Greenhouse only
     python main.py --all            # Run all scrapers
+    python main.py --role-category ai_ml --role-category data_science
     python main.py --greenhouse     # Run only Greenhouse (no API key needed!)
     python main.py --reed           # Run only Reed
     python main.py --adzuna         # Run only Adzuna
@@ -23,7 +24,7 @@ from config import (
 )
 from reed_scraper import scrape_reed
 from adzuna_scraper import scrape_adzuna
-from greenhouse_scraper import scrape_greenhouse
+from greenhouse_scraper import DEFAULT_ROLE_CATEGORIES, ROLE_CATEGORIES, scrape_greenhouse
 
 
 CSV_COLUMNS = [
@@ -33,14 +34,17 @@ CSV_COLUMNS = [
 ]
 
 
-def run_scrapers(sources: list[str] | None = None) -> list[dict]:
+def run_scrapers(
+    sources: list[str] | None = None,
+    greenhouse_role_categories: list[str] | None = None,
+) -> list[dict]:
     """Run selected scrapers and return combined results."""
     all_jobs = []
     run_all = sources is None
 
     if run_all or "greenhouse" in sources:
         print("\n🌱 Scraping Greenhouse boards...")
-        gh_jobs = scrape_greenhouse(GREENHOUSE_BOARDS)
+        gh_jobs = scrape_greenhouse(GREENHOUSE_BOARDS, role_categories=greenhouse_role_categories)
         all_jobs.extend(gh_jobs)
 
     if run_all or "reed" in sources:
@@ -105,6 +109,13 @@ def main():
     parser.add_argument("--greenhouse", action="store_true", help="Scrape Greenhouse only")
     parser.add_argument("--reed", action="store_true", help="Scrape Reed only")
     parser.add_argument("--adzuna", action="store_true", help="Scrape Adzuna only")
+    parser.add_argument(
+        "--role-category",
+        action="append",
+        choices=sorted(ROLE_CATEGORIES),
+        default=None,
+        help="Greenhouse role category filter. Repeat for multiple categories.",
+    )
     parser.add_argument("--append", action="store_true", help="Append to existing CSV instead of overwriting")
     args = parser.parse_args()
 
@@ -126,7 +137,8 @@ def main():
     print(f"  Job Hunter Scraper — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("=" * 60)
 
-    jobs = run_scrapers(sources)
+    role_categories = args.role_category or DEFAULT_ROLE_CATEGORIES
+    jobs = run_scrapers(sources, greenhouse_role_categories=role_categories)
     jobs = deduplicate(jobs)
 
     # Sort by date (newest first)

@@ -5,12 +5,21 @@ import { T, Icon, ICONS, fontMono, fontHeading, fontBody, buttonStyle } from "..
 export default function ScrapePanel({ reload }) {
   const [config, setConfig] = useState(null);
   const [selectedSources, setSelectedSources] = useState(["greenhouse"]);
+  const [selectedRoleCategories, setSelectedRoleCategories] = useState(["ai_ml"]);
   const [isScraping, setIsScraping] = useState(false);
   const [progress, setProgress] = useState("");
   const [showConfig, setShowConfig] = useState(false);
   const pollRef = useRef(null);
 
-  useEffect(() => { api.get("/api/config").then((c) => { if (c) setConfig(c); }); }, []);
+  useEffect(() => {
+    api.get("/api/config").then((c) => {
+      if (!c) return;
+      setConfig(c);
+      if (Array.isArray(c.default_greenhouse_role_categories) && c.default_greenhouse_role_categories.length) {
+        setSelectedRoleCategories(c.default_greenhouse_role_categories);
+      }
+    });
+  }, []);
 
   const startPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -24,11 +33,20 @@ export default function ScrapePanel({ reload }) {
 
   const handleScrape = async () => {
     setIsScraping(true); setProgress("Starting...");
-    const result = await api.post("/api/scrape", { sources: selectedSources });
+    const result = await api.post("/api/scrape", {
+      sources: selectedSources,
+      role_categories: selectedSources.includes("greenhouse") ? selectedRoleCategories : [],
+    });
     if (result) startPolling(); else { setIsScraping(false); setProgress("Failed"); }
   };
 
   const toggleSource = (id) => setSelectedSources((p) => p.includes(id) ? p.filter((s) => s !== id) : [...p, id]);
+  const toggleRoleCategory = (id) => {
+    setSelectedRoleCategories((prev) => {
+      const next = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
+      return next.length ? next : prev;
+    });
+  };
 
   const allSources = [
     { id: "greenhouse", label: "Greenhouse", ok: true },
@@ -82,7 +100,7 @@ export default function ScrapePanel({ reload }) {
 
         <button
           onClick={handleScrape}
-          disabled={isScraping || !selectedSources.length}
+          disabled={isScraping || !selectedSources.length || (selectedSources.includes("greenhouse") && !selectedRoleCategories.length)}
           style={{
             background: isScraping ? "transparent" : `linear-gradient(135deg, ${T.cyan}20, ${T.purple}20)`,
             border: `1px solid ${isScraping ? T.border : T.cyanDim}`,
@@ -97,6 +115,33 @@ export default function ScrapePanel({ reload }) {
           {isScraping ? "Scraping..." : "Scrape Now"}
         </button>
       </div>
+
+      {selectedSources.includes("greenhouse") && config?.greenhouse_role_categories?.length > 0 && (
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 10 }}>
+          {config.greenhouse_role_categories.map((role) => {
+            const active = selectedRoleCategories.includes(role.id);
+            return (
+              <button
+                key={role.id}
+                onClick={() => toggleRoleCategory(role.id)}
+                style={{
+                  background: active ? T.purpleBg : "rgba(255,255,255,0.03)",
+                  border: `1px solid ${active ? "rgba(180,140,255,0.35)" : T.border}`,
+                  borderRadius: 8,
+                  padding: "5px 10px",
+                  color: active ? T.purple : T.dim,
+                  fontSize: 10.5,
+                  cursor: "pointer",
+                  fontFamily: fontBody,
+                  fontWeight: 500,
+                }}
+              >
+                {role.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {progress && (
         <div style={{

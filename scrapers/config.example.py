@@ -52,7 +52,9 @@ LOCATIONS = [
 ]
 DISTANCE_MILES = 25
 
-# ─── GREENHOUSE COMPANIES ───────────────────────────────────
+# ─── GREENHOUSE BOARDS ──────────────────────────────────────
+# Greenhouse's public API is board-scoped. Add board tokens here; choose
+# role categories in the dashboard or with scrapers/main.py --role-category.
 GREENHOUSE_BOARDS = [
     "anthropic",
     "deepmind",

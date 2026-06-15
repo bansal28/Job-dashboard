@@ -1,7 +1,9 @@
 """
 Greenhouse Job Board Scraper
-Public API — no key needed. Scrapes all tech roles.
-Categorization happens later in server/categorizer.py.
+Public API — no key needed.
+
+The Greenhouse API is board-scoped, so we fetch configured boards and filter
+the returned jobs by selected role categories.
 """
 
 import requests
@@ -42,11 +44,130 @@ EXCLUDE_KEYWORDS = [
     "content writer", "copywriter", "social media",
 ]
 
+DEFAULT_ROLE_CATEGORIES = ["ai_ml"]
 
-def scrape_greenhouse(board_tokens: list, filter_relevant: bool = True) -> list:
+ROLE_CATEGORIES = {
+    "ai_ml": {
+        "label": "AI / ML",
+        "keywords": [
+            "machine learning", "ml engineer", "ml scientist", "ml research",
+            "ml ops", "mlops", "ml platform", "ml infrastructure",
+            "artificial intelligence", " ai engineer", "ai research", "ai scientist",
+            "ai safety", "ai infrastructure", "ai platform",
+            "deep learning", "neural net", "computer vision",
+            "nlp", "natural language", "language model", "llm",
+            "reinforcement learning", "generative ai", "gen ai",
+            "applied scientist", "research scientist", "research engineer",
+            "pytorch", "tensorflow", "model training", "model deployment",
+        ],
+    },
+    "data_science": {
+        "label": "Data Science",
+        "keywords": [
+            "data scientist", "data science", "data analyst",
+            "business intelligence", " bi developer", "bi engineer",
+            "analytics engineer", "insight analyst", "quantitative analyst",
+            "statistician", "decision scientist",
+        ],
+    },
+    "data_engineering": {
+        "label": "Data Engineering",
+        "keywords": [
+            "data engineer", "data platform", "data infrastructure",
+            "etl", "data pipeline", "data warehouse", "dbt ",
+            "airflow", "spark engineer", "kafka", "database engineer",
+        ],
+    },
+    "software_engineering": {
+        "label": "Software Engineering",
+        "keywords": [
+            "software engineer", "software developer", "developer",
+            "programmer", "coder", "solutions engineer", "solutions architect",
+        ],
+    },
+    "backend": {
+        "label": "Backend",
+        "keywords": [
+            "backend", "back-end", "back end", "server-side",
+            "api engineer", "api developer", "microservices",
+            "distributed systems", "python engineer", "java engineer",
+            "golang engineer", "rust engineer", "node.js engineer",
+        ],
+    },
+    "frontend": {
+        "label": "Frontend",
+        "keywords": [
+            "frontend", "front-end", "front end", "ui engineer",
+            "ui developer", "react developer", "react engineer",
+            "vue developer", "angular developer", "javascript engineer",
+            "typescript engineer", "web developer", "web engineer",
+        ],
+    },
+    "full_stack": {
+        "label": "Full Stack",
+        "keywords": ["full stack", "fullstack", "full-stack"],
+    },
+    "mobile": {
+        "label": "Mobile",
+        "keywords": [
+            "mobile engineer", "mobile developer", "ios engineer",
+            "ios developer", "android engineer", "android developer",
+            "react native", "flutter developer", "swift developer",
+            "kotlin developer",
+        ],
+    },
+    "devops_cloud_sre": {
+        "label": "DevOps / Cloud / SRE",
+        "keywords": [
+            "devops", "dev ops", "site reliability", "sre ",
+            "platform engineer", "infrastructure engineer", "cloud engineer",
+            "cloud architect", "kubernetes", "docker engineer", "terraform",
+            "aws engineer", "azure engineer", "gcp engineer",
+            "systems engineer", "linux engineer", "release engineer",
+        ],
+    },
+    "security": {
+        "label": "Security",
+        "keywords": [
+            "security engineer", "cybersecurity", "cyber security",
+            "infosec", "penetration test", "security analyst",
+            "appsec", "application security", "soc analyst",
+        ],
+    },
+    "qa_testing": {
+        "label": "QA / Testing",
+        "keywords": [
+            "qa engineer", "quality assurance", "test engineer",
+            "sdet", "automation test", "quality engineer",
+        ],
+    },
+    "product_design": {
+        "label": "Product / Design",
+        "keywords": [
+            "product manager", "product owner", "ux engineer",
+            "ux designer", "ui/ux", "design engineer", "product designer",
+            "technical product",
+        ],
+    },
+}
+
+
+def get_role_category_options() -> list[dict]:
+    return [
+        {"id": category_id, "label": data["label"]}
+        for category_id, data in ROLE_CATEGORIES.items()
+    ]
+
+
+def scrape_greenhouse(
+    board_tokens: list,
+    filter_relevant: bool = True,
+    role_categories: list[str] | None = None,
+) -> list:
     if not board_tokens:
         return []
 
+    selected_categories = _normalize_role_categories(role_categories)
     jobs = []
     seen = set()
 
@@ -69,8 +190,11 @@ def scrape_greenhouse(board_tokens: list, filter_relevant: bool = True) -> list:
 
                 title = item.get("title", "").strip()
                 content = _strip_html(item.get("content", ""))
+                matched_roles = _matched_role_categories(title, content, selected_categories)
 
-                if filter_relevant and not _is_tech(title):
+                if filter_relevant and not matched_roles and not _is_tech(title):
+                    continue
+                if selected_categories and not matched_roles:
                     continue
 
                 seen.add(job_id)
@@ -91,16 +215,41 @@ def scrape_greenhouse(board_tokens: list, filter_relevant: bool = True) -> list:
                     "description_snippet": content[:500],
                     "full_description": content,
                     "date_posted": _parse_date(item.get("updated_at", "")),
-                    "query_matched": ", ".join(departments) or "Unknown",
+                    "query_matched": ", ".join(matched_roles + departments) or "Unknown",
                 })
 
-            print(f"[Greenhouse] {_prettify(token)}: {matched}/{len(board_jobs)} tech jobs")
+            role_label = ", ".join(_role_label(category_id) for category_id in selected_categories) or "tech"
+            print(f"[Greenhouse] {_prettify(token)}: {matched}/{len(board_jobs)} {role_label} jobs")
 
         except requests.RequestException as e:
             print(f"[Greenhouse] Error '{token}': {e}")
 
     print(f"[Greenhouse] Total: {len(jobs)}")
     return jobs
+
+
+def _normalize_role_categories(role_categories: list[str] | None) -> list[str]:
+    selected = role_categories if role_categories is not None else DEFAULT_ROLE_CATEGORIES
+    return [category_id for category_id in selected if category_id in ROLE_CATEGORIES]
+
+
+def _matched_role_categories(title: str, content: str, selected_categories: list[str]) -> list[str]:
+    if not selected_categories:
+        return []
+    title_text = title.lower()
+    text = f" {title.lower()} {content[:3000].lower()} "
+    if any(kw in title_text for kw in EXCLUDE_KEYWORDS):
+        return []
+    labels = []
+    for category_id in selected_categories:
+        keywords = ROLE_CATEGORIES[category_id]["keywords"]
+        if any(keyword in text for keyword in keywords):
+            labels.append(_role_label(category_id))
+    return labels
+
+
+def _role_label(category_id: str) -> str:
+    return str(ROLE_CATEGORIES.get(category_id, {}).get("label", category_id))
 
 
 def _is_tech(title: str) -> bool:
