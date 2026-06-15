@@ -89,6 +89,55 @@ class DenseResumeRetriever:
             )
         return hits
 
+    def search_many(self, queries: list[str], k: int = 6) -> list[list[DenseHit]]:
+        if not self.available or self._collection is None:
+            return [[] for _ in queries]
+
+        non_empty = [(idx, query) for idx, query in enumerate(queries) if query.strip()]
+        results_by_index: list[list[DenseHit]] = [[] for _ in queries]
+        if not non_empty:
+            return results_by_index
+
+        embeddings = self._encode([query for _, query in non_empty])
+        result = self._collection.query(
+            query_embeddings=embeddings,
+            n_results=max(k, 1),
+            include=["documents", "metadatas", "distances"],
+        )
+
+        all_ids = result.get("ids", [])
+        all_documents = result.get("documents", [])
+        all_metadatas = result.get("metadatas", [])
+        all_distances = result.get("distances", [])
+
+        for result_idx, (original_idx, _) in enumerate(non_empty):
+            ids = all_ids[result_idx] if result_idx < len(all_ids) else []
+            documents = all_documents[result_idx] if result_idx < len(all_documents) else []
+            metadatas = all_metadatas[result_idx] if result_idx < len(all_metadatas) else []
+            distances = all_distances[result_idx] if result_idx < len(all_distances) else []
+            hits: list[DenseHit] = []
+            for rank, (chunk_id, text, metadata, distance) in enumerate(
+                zip(ids, documents, metadatas, distances),
+                start=1,
+            ):
+                score = max(0.0, 1.0 - float(distance or 0.0))
+                hits.append(
+                    DenseHit(
+                        chunk=ResumeChunk(
+                            id=chunk_id,
+                            text=text,
+                            section=str(metadata.get("section", "")),
+                            role=str(metadata.get("role", "")),
+                            company=str(metadata.get("company", "")),
+                            kind=str(metadata.get("kind", "")),
+                        ),
+                        score=score,
+                        rank=rank,
+                    )
+                )
+            results_by_index[original_idx] = hits
+        return results_by_index
+
     def _load_dependencies(self) -> None:
         import chromadb  # type: ignore
         from sentence_transformers import SentenceTransformer  # type: ignore

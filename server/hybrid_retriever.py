@@ -87,6 +87,45 @@ class HybridResumeRetriever:
 
     def score_query(self, query: str, method: RetrievalMethod = RETRIEVAL_METHOD) -> tuple[int, list[RetrievalResult]]:
         results = self.retrieve(query, k=RETRIEVAL_K, method=method)
+        return self._score_results(results, method)
+
+    def score_queries(
+        self,
+        queries: list[str],
+        method: RetrievalMethod = RETRIEVAL_METHOD,
+    ) -> list[tuple[int, list[RetrievalResult]]]:
+        method = _normalize_method(method)
+        if method == "dense":
+            dense_many = self.dense.search_many(queries, k=RETRIEVAL_K)
+            return [
+                self._score_results(_convert_hits(hits, "dense"), method)
+                for hits in dense_many
+            ]
+        if method == "sparse":
+            return [
+                self._score_results(_convert_hits(self.sparse.search(query, RETRIEVAL_K), "sparse"), method)
+                for query in queries
+            ]
+
+        dense_many = self.dense.search_many(queries, k=RETRIEVAL_K)
+        scored: list[tuple[int, list[RetrievalResult]]] = []
+        for query, dense_hits in zip(queries, dense_many):
+            dense_results = _convert_hits(dense_hits, "dense")
+            sparse_results = _convert_hits(self.sparse.search(query, RETRIEVAL_K), "sparse")
+            fused = rrf_fuse(
+                {"dense": dense_results, "sparse": sparse_results},
+                k=RETRIEVAL_K,
+                rrf_k=RRF_K,
+                weights={"dense": RRF_DENSE_WEIGHT, "sparse": RRF_SPARSE_WEIGHT},
+            )
+            scored.append(self._score_results(fused, method))
+        return scored
+
+    def _score_results(
+        self,
+        results: list[RetrievalResult],
+        method: RetrievalMethod,
+    ) -> tuple[int, list[RetrievalResult]]:
         if not results:
             return 0, []
         if method == "hybrid" and results[0].method == "hybrid":

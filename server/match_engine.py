@@ -412,6 +412,16 @@ def score_all_jobs(jobs: list[dict]) -> list[dict]:
     """Score all jobs and add match_score field. Returns jobs with scores."""
     profile = get_profile()  # ensure loaded
 
+    if get_retriever:
+        try:
+            queries = [_job_query(job) for job in jobs]
+            scores = get_retriever().score_queries(queries, method=RETRIEVAL_METHOD)
+            for job, (score, _) in zip(jobs, scores):
+                job["match_score"] = score or _legacy_score_job(job)
+            return jobs
+        except Exception as exc:
+            print(f"[Match] Batch hybrid scoring failed, using legacy scores: {exc}")
+
     for job in jobs:
         job["match_score"] = score_job(job)
 
@@ -471,4 +481,4 @@ def _job_query(job: dict) -> str:
         job.get("full_description", ""),
         job.get("description_snippet", ""),
     ]
-    return "\n".join(str(part) for part in parts if part)
+    return "\n".join(str(part) for part in parts if part)[:4000]
